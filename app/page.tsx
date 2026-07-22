@@ -30,6 +30,9 @@ type CardEffect =
   | "waterWave"
   | "ironRampage";
 type Phase = "drawing" | "playing" | "discarding" | "enemy-turn";
+type Screen = "map" | "battle";
+type MapPosition = { x: number; y: number };
+type RoomType = "empty" | "combat";
 
 type Card = {
   id: number;
@@ -102,6 +105,12 @@ type DamagePopup = {
 
 const MAX_PLAYER_HP = 20;
 const STARTING_DECK_SIZE = 27;
+const MAP_COLUMNS = 15;
+const MAP_ROWS = 60;
+const MAP_CELL_SIZE = 68;
+const MAP_CELL_GAP = 12;
+const MAP_PADDING = 42;
+const MAP_START: MapPosition = { x: Math.floor(MAP_COLUMNS / 2), y: 0 };
 const CARD_HEIGHT = 144;
 const PILE_HEIGHT = 226;
 const DEFAULT_STACK_OFFSET = 18;
@@ -110,6 +119,20 @@ const MAX_STACK_TRAVEL = PILE_HEIGHT - CARD_HEIGHT;
 function getStackOffset(cardCount: number) {
   if (cardCount <= 1) return DEFAULT_STACK_OFFSET;
   return Math.min(DEFAULT_STACK_OFFSET, MAX_STACK_TRAVEL / (cardCount - 1));
+}
+
+function mapRoomKey(position: MapPosition) {
+  return `${position.x}:${position.y}`;
+}
+
+function getRoomType(position: MapPosition, seed: number): RoomType {
+  if (position.x === MAP_START.x && position.y === MAP_START.y) return "empty";
+  let hash = Math.imul(position.x + 17, 374761393)
+    ^ Math.imul(position.y + 29, 668265263)
+    ^ Math.imul(seed + 11, 1442695041);
+  hash = Math.imul(hash ^ (hash >>> 13), 1274126177);
+  const roll = ((hash ^ (hash >>> 16)) >>> 0) / 4294967296;
+  return roll < 0.35 ? "combat" : "empty";
 }
 
 const ATTACK_LABEL: Record<DamageType, string> = {
@@ -221,7 +244,7 @@ function drawFromPiles(piles: Card[][]) {
   return { piles: nextPiles, hand };
 }
 
-function waitingState(): GameState {
+function waitingState(playerHp = MAX_PLAYER_HP): GameState {
   return {
     piles: [],
     hand: [],
@@ -232,7 +255,7 @@ function waitingState(): GameState {
     pendingDiscards: 0,
     pendingSweep: false,
     turn: 1,
-    playerHp: MAX_PLAYER_HP,
+    playerHp,
     playerPhysicalBlock: 0,
     playerMagicBlock: 0,
     strength: 0,
@@ -247,9 +270,9 @@ function waitingState(): GameState {
   };
 }
 
-function dealtState(): GameState {
+function dealtState(playerHp = MAX_PLAYER_HP): GameState {
   return {
-    ...waitingState(),
+    ...waitingState(playerHp),
     piles: buildPiles(shuffle(createDeck())),
     message: "파일 배치 완료 — 맨 위 카드를 가져옵니다.",
   };
@@ -302,6 +325,16 @@ function CardFace({ card }: { card: Card }) {
 }
 
 export default function Home() {
+  const [screen, setScreen] = useState<Screen>("map");
+  const [runPlayerHp, setRunPlayerHp] = useState(MAX_PLAYER_HP);
+  const [mapSeed, setMapSeed] = useState(1);
+  const [mapPosition, setMapPosition] = useState<MapPosition>(MAP_START);
+  const [visitedRooms, setVisitedRooms] = useState<Set<string>>(
+    () => new Set([mapRoomKey(MAP_START)]),
+  );
+  const [clearedCombats, setClearedCombats] = useState<Set<string>>(() => new Set());
+  const [activeBattleRoom, setActiveBattleRoom] = useState<string | null>(null);
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
   const [dragging, setDragging] = useState<DragState | null>(null);
@@ -312,6 +345,16 @@ export default function Home() {
   const handCardRefs = useRef(new Map<number, HTMLButtonElement>());
   const dragRef = useRef<DragState & { startX: number; startY: number } | null>(null);
   const timersRef = useRef<number[]>([]);
+  const mapViewportRef = useRef<HTMLDivElement | null>(null);
+  const mapDragRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
+  const mapWasDraggedRef = useRef(false);
+  const moveOnMapRef = useRef<(deltaX: number, deltaY: number) => void>(() => {});
 
   const later = (callback: () => void, delay: number) => {
     const timer = window.setTimeout(callback, delay);
@@ -348,23 +391,147 @@ export default function Home() {
     });
   };
 
-  const startBattle = () => {
+  const clearBattleTimers = () => {
+    timersRef.current.forEach((timer) => window.clearTimeout(timer));
+    timersRef.current = [];
+  };
+
+  const startBattle = (playerHp = runPlayerHp) => {
+    clearBattleTimers();
     setDragging(null);
     setLockedEnemyId(null);
     setAttackingEnemyId(null);
     setDamagePopup(null);
     setPhase("drawing");
-    setGame(dealtState());
+    setGame(dealtState(playerHp));
+    setScreen("battle");
     later(drawCards, 360);
   };
 
   useEffect(() => {
-    startBattle();
     return () => {
-      timersRef.current.forEach((timer) => window.clearTimeout(timer));
-      timersRef.current = [];
+      clearBattleTimers();
     };
   }, []);
+
+  const centerMapOn = (position: MapPosition) => {
+    const viewport = mapViewportRef.current;
+    if (!viewport) return;
+    const roomCenterX = MAP_PADDING + position.x * (MAP_CELL_SIZE + MAP_CELL_GAP) + MAP_CELL_SIZE / 2;
+    const roomCenterY = MAP_PADDING + position.y * (MAP_CELL_SIZE + MAP_CELL_GAP) + MAP_CELL_SIZE / 2;
+    setMapPan({
+      x: viewport.clientWidth / 2 - roomCenterX,
+      y: viewport.clientHeight / 2 - roomCenterY,
+    });
+  };
+
+  const moveOnMap = (deltaX: number, deltaY: number) => {
+    if (screen !== "map") return;
+    const nextPosition = {
+      x: mapPosition.x + deltaX,
+      y: mapPosition.y + deltaY,
+    };
+    if (
+      nextPosition.x < 0
+      || nextPosition.x >= MAP_COLUMNS
+      || nextPosition.y < 0
+      || nextPosition.y >= MAP_ROWS
+    ) return;
+
+    const roomKey = mapRoomKey(nextPosition);
+    setMapPosition(nextPosition);
+    setVisitedRooms((current) => new Set(current).add(roomKey));
+
+    if (getRoomType(nextPosition, mapSeed) === "combat" && !clearedCombats.has(roomKey)) {
+      setActiveBattleRoom(roomKey);
+      startBattle(runPlayerHp);
+    }
+  };
+  useLayoutEffect(() => {
+    moveOnMapRef.current = moveOnMap;
+  });
+
+  const returnToMap = () => {
+    if (activeBattleRoom) {
+      setClearedCombats((current) => new Set(current).add(activeBattleRoom));
+    }
+    setRunPlayerHp(game.playerHp);
+    setActiveBattleRoom(null);
+    setScreen("map");
+  };
+
+  const startNewRun = () => {
+    clearBattleTimers();
+    const nextSeed = mapSeed + 1;
+    setRunPlayerHp(MAX_PLAYER_HP);
+    setMapSeed(nextSeed);
+    setMapPosition(MAP_START);
+    setVisitedRooms(new Set([mapRoomKey(MAP_START)]));
+    setClearedCombats(new Set());
+    setActiveBattleRoom(null);
+    setGame(waitingState());
+    setPhase("drawing");
+    setScreen("map");
+  };
+
+  const beginMapDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    mapWasDraggedRef.current = false;
+    mapDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: mapPan.x,
+      originY: mapPan.y,
+      moved: false,
+    };
+  };
+
+  const moveMapDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = mapDragRef.current;
+    if (!drag) return;
+    const offsetX = event.clientX - drag.startX;
+    const offsetY = event.clientY - drag.startY;
+    const moved = drag.moved || Math.hypot(offsetX, offsetY) > 6;
+    mapDragRef.current = { ...drag, moved };
+    mapWasDraggedRef.current = moved;
+    setMapPan({ x: drag.originX + offsetX, y: drag.originY + offsetY });
+  };
+
+  const finishMapDrag = () => {
+    mapDragRef.current = null;
+  };
+
+  useLayoutEffect(() => {
+    if (screen !== "map") return;
+    const frame = window.requestAnimationFrame(() => centerMapOn(mapPosition));
+    return () => window.cancelAnimationFrame(frame);
+  }, [screen, mapPosition]);
+
+  useEffect(() => {
+    if (screen !== "map") return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      const direction = ({
+        ArrowUp: [0, -1],
+        w: [0, -1],
+        W: [0, -1],
+        ArrowDown: [0, 1],
+        s: [0, 1],
+        S: [0, 1],
+        ArrowLeft: [-1, 0],
+        a: [-1, 0],
+        A: [-1, 0],
+        ArrowRight: [1, 0],
+        d: [1, 0],
+        D: [1, 0],
+      } as Record<string, [number, number]>)[event.key];
+      if (!direction) return;
+      event.preventDefault();
+      moveOnMapRef.current(direction[0], direction[1]);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [screen]);
 
   useLayoutEffect(() => {
     const origins = pendingOriginsRef.current;
@@ -372,8 +539,8 @@ export default function Home() {
 
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       origins.clear();
-      setPhase("playing");
-      return;
+      const frame = window.requestAnimationFrame(() => setPhase("playing"));
+      return () => window.cancelAnimationFrame(frame);
     }
 
     game.hand.forEach((card, index) => {
@@ -414,10 +581,13 @@ export default function Home() {
   useEffect(() => {
     if (!lockedEnemyId) return;
     const target = game.enemies.find((enemy) => enemy.id === lockedEnemyId);
-    if (!target || target.hp === 0) setLockedEnemyId(null);
+    if (!target || target.hp === 0) {
+      const frame = window.requestAnimationFrame(() => setLockedEnemyId(null));
+      return () => window.cancelAnimationFrame(frame);
+    }
   }, [game.enemies, lockedEnemyId]);
 
-  const useCard = (card: Card, targetEnemyId?: string) => {
+  const playCard = (card: Card, targetEnemyId?: string) => {
     setGame((current) => {
       if (
         current.status !== "playing" ||
@@ -760,7 +930,7 @@ export default function Home() {
           (current.card.kind !== "strike" && dropZone === "defend")
         );
       if (validDrop) {
-        useCard(current.card, resolvedTargetEnemyId);
+        playCard(current.card, resolvedTargetEnemyId);
       } else {
         setGame((state) => ({
           ...state,
@@ -940,6 +1110,126 @@ export default function Home() {
     game.pendingDraws > 0 ||
     game.pendingDiscards > 0 ||
     game.pendingSweep;
+
+  if (screen === "map") {
+    const exploredCount = visitedRooms.size;
+    const mapWidth = MAP_PADDING * 2 + MAP_COLUMNS * MAP_CELL_SIZE + (MAP_COLUMNS - 1) * MAP_CELL_GAP;
+    const mapHeight = MAP_PADDING * 2 + MAP_ROWS * MAP_CELL_SIZE + (MAP_ROWS - 1) * MAP_CELL_GAP;
+
+    return (
+      <main className="game-shell map-shell">
+        <header className="topbar map-topbar">
+          <div>
+            <p className="eyebrow">THE DESCENT · EXPLORATION MAP</p>
+            <h1>아래로 이어지는 방</h1>
+          </div>
+          <div className="map-run-stats">
+            <div className="map-health" aria-label={`체력 ${runPlayerHp} 중 ${MAX_PLAYER_HP}`}>
+              <span>HP</span><strong>{runPlayerHp} / {MAX_PLAYER_HP}</strong>
+            </div>
+            <div><span>깊이</span><strong>{mapPosition.y}</strong></div>
+            <div><span>방문</span><strong>{exploredCount}</strong></div>
+          </div>
+        </header>
+
+        <section className="map-board" aria-label="탐험 지도">
+          <div className="map-toolbar">
+            <div className="map-legend" aria-label="지도 범례">
+              <span><i className="legend-current" />현재 위치</span>
+              <span><i className="legend-empty" />빈 방</span>
+              <span><i className="legend-combat" />전투</span>
+              <span><i className="legend-cleared" />클리어</span>
+              <span><i className="legend-unknown" />미방문</span>
+            </div>
+            <button type="button" className="recenter-map" onClick={() => centerMapOn(mapPosition)}>
+              현재 위치로
+            </button>
+          </div>
+
+          <div
+            className="map-viewport"
+            ref={mapViewportRef}
+            onPointerDown={beginMapDrag}
+            onPointerMove={moveMapDrag}
+            onPointerUp={finishMapDrag}
+            onPointerCancel={finishMapDrag}
+            onPointerLeave={finishMapDrag}
+          >
+            <div
+              className="map-canvas"
+              style={{
+                width: mapWidth,
+                height: mapHeight,
+                padding: MAP_PADDING,
+                gap: MAP_CELL_GAP,
+                gridTemplateColumns: `repeat(${MAP_COLUMNS}, ${MAP_CELL_SIZE}px)`,
+                gridAutoRows: `${MAP_CELL_SIZE}px`,
+                transform: `translate3d(${mapPan.x}px, ${mapPan.y}px, 0)`,
+              }}
+            >
+              {Array.from({ length: MAP_COLUMNS * MAP_ROWS }, (_, index) => {
+                const position = { x: index % MAP_COLUMNS, y: Math.floor(index / MAP_COLUMNS) };
+                const roomKey = mapRoomKey(position);
+                const visited = visitedRooms.has(roomKey);
+                const cleared = clearedCombats.has(roomKey);
+                const roomType = getRoomType(position, mapSeed);
+                const current = position.x === mapPosition.x && position.y === mapPosition.y;
+                const distance = Math.abs(position.x - mapPosition.x) + Math.abs(position.y - mapPosition.y);
+                const adjacent = distance === 1;
+                const roomState = !visited
+                  ? "unknown"
+                  : cleared
+                    ? "cleared"
+                    : roomType;
+                const roomLabel = current
+                  ? "현재 위치"
+                  : !visited
+                    ? "미지의 방"
+                    : cleared
+                      ? "클리어한 전투 방"
+                      : roomType === "combat"
+                        ? "전투 방"
+                        : "빈 방";
+                return (
+                  <button
+                    type="button"
+                    className={`map-room is-${roomState} ${current ? "is-current" : ""} ${adjacent ? "is-adjacent" : ""}`}
+                    key={roomKey}
+                    tabIndex={adjacent ? 0 : -1}
+                    aria-disabled={!adjacent}
+                    aria-label={`${roomLabel}, 좌표 ${position.x + 1}, 깊이 ${position.y}`}
+                    onClick={() => {
+                      if (mapWasDraggedRef.current) {
+                        mapWasDraggedRef.current = false;
+                        return;
+                      }
+                      if (!adjacent) return;
+                      moveOnMap(position.x - mapPosition.x, position.y - mapPosition.y);
+                    }}
+                  >
+                    {current
+                      ? <span className="map-player">P</span>
+                      : visited
+                        ? <span>{cleared ? "정리" : roomType === "combat" ? "전투" : "빈 방"}</span>
+                        : null}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="map-depth-fade" aria-hidden="true" />
+          </div>
+
+          <div className="map-movement" aria-label="이동 조작">
+            <button type="button" onClick={() => moveOnMap(0, -1)} disabled={mapPosition.y === 0} aria-label="위로 이동">↑</button>
+            <button type="button" onClick={() => moveOnMap(-1, 0)} disabled={mapPosition.x === 0} aria-label="왼쪽으로 이동">←</button>
+            <button type="button" onClick={() => moveOnMap(0, 1)} disabled={mapPosition.y === MAP_ROWS - 1} aria-label="아래로 이동">↓</button>
+            <button type="button" onClick={() => moveOnMap(1, 0)} disabled={mapPosition.x === MAP_COLUMNS - 1} aria-label="오른쪽으로 이동">→</button>
+            <span>방을 클릭하거나 방향키 / WASD로 이동 · 지도를 드래그해 둘러보기</span>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="game-shell">
@@ -1179,8 +1469,12 @@ export default function Home() {
             <div className="result-card">
               <p>{game.status === "won" ? "BATTLE CLEARED" : "RUN ENDED"}</p>
               <h2 id="result-title">{game.status === "won" ? "승리" : "패배"}</h2>
-              <span>{game.turn}턴 동안 전투했습니다.</span>
-              <button onClick={startBattle}>다시 전투하기</button>
+              <span>{game.status === "won"
+                ? `${game.playerHp} 체력으로 지도로 돌아갑니다.`
+                : `${game.turn}턴에서 탐험이 끝났습니다.`}</span>
+              <button onClick={game.status === "won" ? returnToMap : startNewRun}>
+                {game.status === "won" ? "지도로 돌아가기" : "새 탐험 시작"}
+              </button>
             </div>
           </div>
         )}

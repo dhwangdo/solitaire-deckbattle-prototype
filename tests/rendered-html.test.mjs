@@ -13,18 +13,18 @@ async function render() {
   );
 }
 
-test("server-renders the card battle", async () => {
+test("server-renders the exploration map", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<title>카드 파일 전투/);
-  assert.match(html, /SOLITAIRE DECKBATTLE/);
-  assert.match(html, /훈련용 괴수/);
-  assert.match(html, /숲 고블린/);
-  assert.match(html, /턴 종료/);
-  assert.match(html, /class="piles"/);
-  assert.match(html, /카드를 준비하고 있습니다/);
+  assert.match(html, /THE DESCENT/);
+  assert.match(html, /아래로 이어지는 방/);
+  assert.match(html, /class="map-viewport"/);
+  assert.match(html, /현재 위치로/);
+  assert.match(html, /방을 클릭하거나 방향키/);
+  assert.match(html, /aria-label="탐험 지도"/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });
