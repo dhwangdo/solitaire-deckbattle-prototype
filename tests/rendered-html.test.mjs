@@ -24,7 +24,8 @@ test("server-renders the exploration map", async () => {
   assert.match(html, /아래로 이어지는 방/);
   assert.match(html, /class="map-viewport"/);
   assert.match(html, /현재 위치로/);
-  assert.match(html, /방을 클릭하거나 방향키/);
+  assert.match(html, /인접한 방을 클릭해 이동/);
+  assert.match(html, /덱 편집/);
   assert.match(html, /aria-label="탐험 지도"/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });

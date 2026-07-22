@@ -107,8 +107,9 @@ const MAX_PLAYER_HP = 20;
 const STARTING_DECK_SIZE = 27;
 const MAP_COLUMNS = 15;
 const MAP_ROWS = 60;
-const MAP_CELL_SIZE = 68;
-const MAP_CELL_GAP = 12;
+const MAP_ROOM_WIDTH = 204;
+const MAP_ROOM_HEIGHT = 136;
+const MAP_CELL_GAP = 20;
 const MAP_PADDING = 42;
 const MAP_START: MapPosition = { x: Math.floor(MAP_COLUMNS / 2), y: 0 };
 const CARD_HEIGHT = 144;
@@ -149,8 +150,8 @@ function createEnemies(): EnemyState[] {
     {
       id: "beast",
       name: "훈련용 괴수",
-      hp: 40,
-      maxHp: 40,
+      hp: 1,
+      maxHp: 1,
       pattern: [
         { type: "physical", value: 6 },
         { type: "physical", value: 8 },
@@ -165,8 +166,8 @@ function createEnemies(): EnemyState[] {
     {
       id: "goblin",
       name: "숲 고블린",
-      hp: 34,
-      maxHp: 34,
+      hp: 1,
+      maxHp: 1,
       pattern: [
         { type: "magic", value: 5 },
         { type: "physical", value: 7 },
@@ -270,10 +271,10 @@ function waitingState(playerHp = MAX_PLAYER_HP): GameState {
   };
 }
 
-function dealtState(playerHp = MAX_PLAYER_HP): GameState {
+function dealtState(playerHp = MAX_PLAYER_HP, deck = createDeck()): GameState {
   return {
     ...waitingState(playerHp),
-    piles: buildPiles(shuffle(createDeck())),
+    piles: buildPiles(shuffle(deck.map((card) => ({ ...card, revealed: false })))),
     message: "파일 배치 완료 — 맨 위 카드를 가져옵니다.",
   };
 }
@@ -335,6 +336,10 @@ export default function Home() {
   const [clearedCombats, setClearedCombats] = useState<Set<string>>(() => new Set());
   const [activeBattleRoom, setActiveBattleRoom] = useState<string | null>(null);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const [deckCards, setDeckCards] = useState<Card[]>(createDeck);
+  const [inventoryCards, setInventoryCards] = useState<Card[]>([]);
+  const [deckEditorOpen, setDeckEditorOpen] = useState(false);
+  const [deckEditorMessage, setDeckEditorMessage] = useState("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
   const [dragging, setDragging] = useState<DragState | null>(null);
@@ -354,7 +359,6 @@ export default function Home() {
     moved: boolean;
   } | null>(null);
   const mapWasDraggedRef = useRef(false);
-  const moveOnMapRef = useRef<(deltaX: number, deltaY: number) => void>(() => {});
 
   const later = (callback: () => void, delay: number) => {
     const timer = window.setTimeout(callback, delay);
@@ -398,12 +402,13 @@ export default function Home() {
 
   const startBattle = (playerHp = runPlayerHp) => {
     clearBattleTimers();
+    setDeckEditorOpen(false);
     setDragging(null);
     setLockedEnemyId(null);
     setAttackingEnemyId(null);
     setDamagePopup(null);
     setPhase("drawing");
-    setGame(dealtState(playerHp));
+    setGame(dealtState(playerHp, deckCards));
     setScreen("battle");
     later(drawCards, 360);
   };
@@ -417,8 +422,8 @@ export default function Home() {
   const centerMapOn = (position: MapPosition) => {
     const viewport = mapViewportRef.current;
     if (!viewport) return;
-    const roomCenterX = MAP_PADDING + position.x * (MAP_CELL_SIZE + MAP_CELL_GAP) + MAP_CELL_SIZE / 2;
-    const roomCenterY = MAP_PADDING + position.y * (MAP_CELL_SIZE + MAP_CELL_GAP) + MAP_CELL_SIZE / 2;
+    const roomCenterX = MAP_PADDING + position.x * (MAP_ROOM_WIDTH + MAP_CELL_GAP) + MAP_ROOM_WIDTH / 2;
+    const roomCenterY = MAP_PADDING + position.y * (MAP_ROOM_HEIGHT + MAP_CELL_GAP) + MAP_ROOM_HEIGHT / 2;
     setMapPan({
       x: viewport.clientWidth / 2 - roomCenterX,
       y: viewport.clientHeight / 2 - roomCenterY,
@@ -447,9 +452,6 @@ export default function Home() {
       startBattle(runPlayerHp);
     }
   };
-  useLayoutEffect(() => {
-    moveOnMapRef.current = moveOnMap;
-  });
 
   const returnToMap = () => {
     if (activeBattleRoom) {
@@ -472,6 +474,26 @@ export default function Home() {
     setGame(waitingState());
     setPhase("drawing");
     setScreen("map");
+  };
+
+  const moveDeckCardToInventory = (cardId: number) => {
+    if (deckCards.length <= 1) {
+      setDeckEditorMessage("덱에는 반드시 카드가 1장 이상 있어야 합니다.");
+      return;
+    }
+    const card = deckCards.find((item) => item.id === cardId);
+    if (!card) return;
+    setDeckCards((current) => current.filter((item) => item.id !== cardId));
+    setInventoryCards((current) => [...current, card]);
+    setDeckEditorMessage(`${card.name}을(를) 인벤토리로 옮겼습니다.`);
+  };
+
+  const moveInventoryCardToDeck = (cardId: number) => {
+    const card = inventoryCards.find((item) => item.id === cardId);
+    if (!card) return;
+    setInventoryCards((current) => current.filter((item) => item.id !== cardId));
+    setDeckCards((current) => [...current, card]);
+    setDeckEditorMessage(`${card.name}을(를) 덱에 넣었습니다.`);
   };
 
   const beginMapDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -506,32 +528,6 @@ export default function Home() {
     const frame = window.requestAnimationFrame(() => centerMapOn(mapPosition));
     return () => window.cancelAnimationFrame(frame);
   }, [screen, mapPosition]);
-
-  useEffect(() => {
-    if (screen !== "map") return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
-      const direction = ({
-        ArrowUp: [0, -1],
-        w: [0, -1],
-        W: [0, -1],
-        ArrowDown: [0, 1],
-        s: [0, 1],
-        S: [0, 1],
-        ArrowLeft: [-1, 0],
-        a: [-1, 0],
-        A: [-1, 0],
-        ArrowRight: [1, 0],
-        d: [1, 0],
-        D: [1, 0],
-      } as Record<string, [number, number]>)[event.key];
-      if (!direction) return;
-      event.preventDefault();
-      moveOnMapRef.current(direction[0], direction[1]);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [screen]);
 
   useLayoutEffect(() => {
     const origins = pendingOriginsRef.current;
@@ -1113,8 +1109,10 @@ export default function Home() {
 
   if (screen === "map") {
     const exploredCount = visitedRooms.size;
-    const mapWidth = MAP_PADDING * 2 + MAP_COLUMNS * MAP_CELL_SIZE + (MAP_COLUMNS - 1) * MAP_CELL_GAP;
-    const mapHeight = MAP_PADDING * 2 + MAP_ROWS * MAP_CELL_SIZE + (MAP_ROWS - 1) * MAP_CELL_GAP;
+    const currentRoomKey = mapRoomKey(mapPosition);
+    const canEditDeck = getRoomType(mapPosition, mapSeed) === "empty" || clearedCombats.has(currentRoomKey);
+    const mapWidth = MAP_PADDING * 2 + MAP_COLUMNS * MAP_ROOM_WIDTH + (MAP_COLUMNS - 1) * MAP_CELL_GAP;
+    const mapHeight = MAP_PADDING * 2 + MAP_ROWS * MAP_ROOM_HEIGHT + (MAP_ROWS - 1) * MAP_CELL_GAP;
 
     return (
       <main className="game-shell map-shell">
@@ -1123,12 +1121,28 @@ export default function Home() {
             <p className="eyebrow">THE DESCENT · EXPLORATION MAP</p>
             <h1>아래로 이어지는 방</h1>
           </div>
-          <div className="map-run-stats">
-            <div className="map-health" aria-label={`체력 ${runPlayerHp} 중 ${MAX_PLAYER_HP}`}>
-              <span>HP</span><strong>{runPlayerHp} / {MAX_PLAYER_HP}</strong>
+          <div className="map-top-actions">
+            <div className="map-run-stats">
+              <div className="map-health" aria-label={`체력 ${runPlayerHp} 중 ${MAX_PLAYER_HP}`}>
+                <span>HP</span><strong>{runPlayerHp} / {MAX_PLAYER_HP}</strong>
+              </div>
+              <div><span>깊이</span><strong>{mapPosition.y}</strong></div>
+              <div><span>방문</span><strong>{exploredCount}</strong></div>
             </div>
-            <div><span>깊이</span><strong>{mapPosition.y}</strong></div>
-            <div><span>방문</span><strong>{exploredCount}</strong></div>
+            {canEditDeck && (
+              <button
+                type="button"
+                className="deck-editor-trigger"
+                onClick={() => {
+                  setDeckEditorMessage("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
+                  setDeckEditorOpen(true);
+                }}
+                aria-label={`덱 편집, 현재 ${deckCards.length}장`}
+              >
+                <span className="deck-stack-icon" aria-hidden="true" />
+                <span>덱 편집</span>
+              </button>
+            )}
           </div>
         </header>
 
@@ -1141,9 +1155,12 @@ export default function Home() {
               <span><i className="legend-cleared" />클리어</span>
               <span><i className="legend-unknown" />미방문</span>
             </div>
-            <button type="button" className="recenter-map" onClick={() => centerMapOn(mapPosition)}>
-              현재 위치로
-            </button>
+            <div className="map-toolbar-actions">
+              <span className="map-help">인접한 방을 클릭해 이동 · 지도를 드래그해 탐색</span>
+              <button type="button" className="recenter-map" onClick={() => centerMapOn(mapPosition)}>
+                현재 위치로
+              </button>
+            </div>
           </div>
 
           <div
@@ -1162,8 +1179,8 @@ export default function Home() {
                 height: mapHeight,
                 padding: MAP_PADDING,
                 gap: MAP_CELL_GAP,
-                gridTemplateColumns: `repeat(${MAP_COLUMNS}, ${MAP_CELL_SIZE}px)`,
-                gridAutoRows: `${MAP_CELL_SIZE}px`,
+                gridTemplateColumns: `repeat(${MAP_COLUMNS}, ${MAP_ROOM_WIDTH}px)`,
+                gridAutoRows: `${MAP_ROOM_HEIGHT}px`,
                 transform: `translate3d(${mapPan.x}px, ${mapPan.y}px, 0)`,
               }}
             >
@@ -1218,15 +1235,70 @@ export default function Home() {
             </div>
             <div className="map-depth-fade" aria-hidden="true" />
           </div>
-
-          <div className="map-movement" aria-label="이동 조작">
-            <button type="button" onClick={() => moveOnMap(0, -1)} disabled={mapPosition.y === 0} aria-label="위로 이동">↑</button>
-            <button type="button" onClick={() => moveOnMap(-1, 0)} disabled={mapPosition.x === 0} aria-label="왼쪽으로 이동">←</button>
-            <button type="button" onClick={() => moveOnMap(0, 1)} disabled={mapPosition.y === MAP_ROWS - 1} aria-label="아래로 이동">↓</button>
-            <button type="button" onClick={() => moveOnMap(1, 0)} disabled={mapPosition.x === MAP_COLUMNS - 1} aria-label="오른쪽으로 이동">→</button>
-            <span>방을 클릭하거나 방향키 / WASD로 이동 · 지도를 드래그해 둘러보기</span>
-          </div>
         </section>
+
+        {deckEditorOpen && (
+          <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title" onClick={() => setDeckEditorOpen(false)}>
+            <section className="deck-editor-panel" onClick={(event) => event.stopPropagation()}>
+              <header className="deck-editor-header">
+                <div>
+                  <p>LOADOUT</p>
+                  <h2 id="deck-editor-title">덱 편집</h2>
+                  <span>카드를 클릭하면 반대편으로 이동합니다. 덱은 최소 1장이어야 합니다.</span>
+                </div>
+                <button type="button" onClick={() => setDeckEditorOpen(false)} aria-label="덱 편집 닫기">×</button>
+              </header>
+
+              <div className="deck-editor-columns">
+                <section className="deck-editor-column">
+                  <div className="deck-editor-column-title">
+                    <h3>전투 덱</h3><strong>{deckCards.length}장</strong>
+                  </div>
+                  <div className="deck-editor-card-list">
+                    {deckCards.map((card) => (
+                      <button
+                        type="button"
+                        className={`deck-editor-card card-face ${card.kind} ${card.damageType}`}
+                        key={card.id}
+                        onClick={() => moveDeckCardToInventory(card.id)}
+                        aria-label={`${card.name}을 인벤토리로 이동`}
+                      >
+                        <CardFace card={card} />
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="deck-editor-column inventory-column">
+                  <div className="deck-editor-column-title">
+                    <h3>인벤토리</h3><strong>{inventoryCards.length}장</strong>
+                  </div>
+                  <div className="deck-editor-card-list">
+                    {inventoryCards.map((card) => (
+                      <button
+                        type="button"
+                        className={`deck-editor-card card-face ${card.kind} ${card.damageType}`}
+                        key={card.id}
+                        onClick={() => moveInventoryCardToDeck(card.id)}
+                        aria-label={`${card.name}을 전투 덱으로 이동`}
+                      >
+                        <CardFace card={card} />
+                      </button>
+                    ))}
+                    {inventoryCards.length === 0 && (
+                      <div className="deck-editor-empty">덱에서 카드를 빼면 이곳에 보관됩니다.</div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              <footer className="deck-editor-footer">
+                <span role="status" aria-live="polite">{deckEditorMessage}</span>
+                <button type="button" onClick={() => setDeckEditorOpen(false)}>편집 완료</button>
+              </footer>
+            </section>
+          </div>
+        )}
       </main>
     );
   }
