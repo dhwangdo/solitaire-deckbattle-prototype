@@ -26,7 +26,8 @@ type CardEffect =
   | "transcend"
   | "rapidFire"
   | "iceShield"
-  | "glow"
+  | "ironWave"
+  | "waterWave"
   | "ironRampage";
 type Phase = "drawing" | "playing" | "discarding" | "enemy-turn";
 
@@ -100,6 +101,7 @@ type DamagePopup = {
 };
 
 const MAX_PLAYER_HP = 20;
+const STARTING_DECK_SIZE = 27;
 const CARD_HEIGHT = 144;
 const PILE_HEIGHT = 226;
 const DEFAULT_STACK_OFFSET = 18;
@@ -163,23 +165,27 @@ function createDeck(): Card[] {
     blueprint: Blueprint,
   ) => Array.from({ length: count }, () => ({ ...blueprint }));
   const blueprints: Blueprint[] = [
-    ...make(6, { kind: "strike", effect: "strike", rarity: "basic", name: "타격", cost: 1, value: 6, draw: 0, damageType: "physical" }),
-    ...make(4, { kind: "defend", effect: "defend", rarity: "basic", name: "방어", cost: 1, value: 5, draw: 0, damageType: "physical" }),
-    ...make(3, { kind: "defend", effect: "defend", rarity: "basic", name: "마법 방어", cost: 1, value: 5, draw: 0, damageType: "magic" }),
+    ...make(5, { kind: "strike", effect: "strike", rarity: "basic", name: "타격", cost: 1, value: 6, draw: 0, damageType: "physical" }),
+    ...make(3, { kind: "defend", effect: "defend", rarity: "basic", name: "방어", cost: 1, value: 5, draw: 0, damageType: "physical" }),
+    ...make(2, { kind: "defend", effect: "defend", rarity: "basic", name: "마법 방어", cost: 1, value: 5, draw: 0, damageType: "magic" }),
     ...make(2, { kind: "strike", effect: "pommel", rarity: "special", name: "폼멜 타격", cost: 1, value: 6, draw: 1, damageType: "physical" }),
     ...make(2, { kind: "defend", effect: "deflect", rarity: "special", name: "흘려보내기", cost: 1, value: 5, draw: 1, damageType: "physical" }),
     { kind: "skill", effect: "steelHeart", rarity: "rare", name: "강철심장", cost: 1, value: 0, draw: 0, damageType: "physical" },
     { kind: "skill", effect: "battlePlan", rarity: "special", name: "전투 설계", cost: 1, value: 0, draw: 0, damageType: "physical" },
-    { kind: "skill", effect: "prepare", rarity: "special", name: "예비", cost: 0, value: 0, draw: 1, damageType: "physical" },
+    ...make(2, { kind: "skill", effect: "prepare", rarity: "special", name: "예비", cost: 0, value: 0, draw: 1, damageType: "physical" }),
     { kind: "skill", effect: "sweep", rarity: "special", name: "걷어내기", cost: 1, value: 0, draw: 0, damageType: "physical" },
     { kind: "strike", effect: "rulerCompass", rarity: "special", name: "자와 컴퍼스", cost: 1, value: 6, draw: 0, damageType: "physical" },
     { kind: "skill", effect: "berserk", rarity: "special", name: "광폭화", cost: 0, value: 0, draw: 0, damageType: "physical" },
     { kind: "skill", effect: "transcend", rarity: "rare", name: "초월", cost: 4, value: 0, draw: 0, damageType: "physical" },
     { kind: "skill", effect: "rapidFire", rarity: "rare", name: "연사", cost: 1, value: 0, draw: 0, damageType: "physical" },
     { kind: "defend", effect: "iceShield", rarity: "special", name: "얼음 방패", cost: 1, value: 8, draw: 0, damageType: "magic" },
-    { kind: "skill", effect: "glow", rarity: "special", name: "발광", cost: 0, value: 0, draw: 0, damageType: "physical" },
+    { kind: "strike", effect: "ironWave", rarity: "special", name: "철의 파동", cost: 1, value: 5, draw: 0, damageType: "physical" },
+    { kind: "strike", effect: "waterWave", rarity: "special", name: "물의 파동", cost: 1, value: 5, draw: 0, damageType: "magic" },
     { kind: "strike", effect: "ironRampage", rarity: "special", name: "무쇠 난동", cost: 2, value: 8, draw: 0, damageType: "physical" },
   ];
+  if (blueprints.length !== STARTING_DECK_SIZE) {
+    throw new Error(`Starting deck must contain ${STARTING_DECK_SIZE} cards.`);
+  }
   return blueprints.map((card, id) => ({ ...card, id, revealed: false }));
 }
 
@@ -278,8 +284,10 @@ function CardFace({ card }: { card: Card }) {
         return <span>다음 공격 카드가<br />한 번 더 발동</span>;
       case "iceShield":
         return <><span className="effect-type magic">마법 방어 {card.value}</span><span>★를 얻습니다</span></>;
-      case "glow":
-        return <span>각 파일의 맨 아래<br />카드를 앞면으로</span>;
+      case "ironWave":
+        return <><span className="effect-type damage">피해 {card.value}</span><span className="effect-type physical">방어 5</span></>;
+      case "waterWave":
+        return <><span className="effect-type damage">피해 {card.value}</span><span className="effect-type magic">마법 방어 5</span></>;
       case "ironRampage":
         return <><span className="effect-type damage">적 전체 피해 {card.value}</span><span className="effect-type physical">방어 5</span></>;
     }
@@ -422,6 +430,7 @@ export default function Home() {
         return { ...current, message: `${card.name}: 에너지가 ${card.cost} 필요합니다.` };
       }
       const isIronRampage = card.effect === "ironRampage";
+      const isWave = card.effect === "ironWave" || card.effect === "waterWave";
       if (card.kind === "strike" && !isIronRampage && !targetEnemyId) return current;
       const targetEnemy = current.enemies.find((enemy) => enemy.id === targetEnemyId);
       if (card.kind === "strike" && !isIronRampage && (!targetEnemy || targetEnemy.hp === 0)) return current;
@@ -434,33 +443,27 @@ export default function Home() {
         : current.enemies;
       const blockGained = card.kind === "defend"
         ? card.value * current.defenseMultiplier
-        : isIronRampage
+        : isIronRampage || isWave
           ? 5 * repetitions * current.defenseMultiplier
           : 0;
-      const nextPhysicalBlock = (card.kind === "defend" && card.damageType === "physical") || isIronRampage
+      const nextPhysicalBlock = (card.kind === "defend" && card.damageType === "physical")
+        || isIronRampage
+        || (isWave && card.damageType === "physical")
         ? current.playerPhysicalBlock + blockGained
         : current.playerPhysicalBlock;
-      const nextMagicBlock = card.kind === "defend" && card.damageType === "magic"
+      const nextMagicBlock = (card.kind === "defend" && card.damageType === "magic")
+        || (isWave && card.damageType === "magic")
         ? current.playerMagicBlock + blockGained
         : current.playerMagicBlock;
       const won = nextEnemies.every((enemy) => enemy.hp === 0);
       const canDraw = current.piles.some((pile) => pile.length > 0);
       const drawsAdded = !won && canDraw ? card.draw * repetitions : 0;
-      let nextPiles = current.piles;
-      let glowCount = 0;
-      if (card.effect === "glow") {
-        nextPiles = current.piles.map((pile) => pile.map((pileCard) => ({ ...pileCard })));
-        nextPiles.forEach((pile) => {
-          if (!pile.length) return;
-          if (!pile[0].revealed) glowCount += 1;
-          pile[0].revealed = true;
-        });
-      }
       const remainingHand = current.hand.filter((item) => item.id !== card.id);
       const pendingDiscards = card.effect === "prepare" && (canDraw || remainingHand.length > 0) ? 1 : 0;
       const pendingSweep = card.effect === "sweep" && canDraw;
       const action = (() => {
         if (isIronRampage) return `적 전체에게 피해 ${damage} · 방어 ${blockGained}${repetitions > 1 ? " (2회 발동)" : ""}`;
+        if (isWave) return `${targetEnemy?.name}에게 피해 ${damage} · ${DEFENSE_LABEL[card.damageType]} ${blockGained}${repetitions > 1 ? " (2회 발동)" : ""}`;
         if (card.kind === "strike") return `${targetEnemy?.name}에게 피해 ${damage}${repetitions > 1 ? " (2회 발동)" : ""}`;
         if (card.kind === "defend") return `${DEFENSE_LABEL[card.damageType]} ${blockGained} 획득`;
         if (card.effect === "steelHeart") return "이번 턴 방어와 마법 방어 획득량 3배";
@@ -470,7 +473,6 @@ export default function Home() {
         if (card.effect === "berserk") return "에너지 2 획득 · 이번 턴 받는 피해 2배";
         if (card.effect === "transcend") return "이번 턴 피해 면역 · 힘 5 획득";
         if (card.effect === "rapidFire") return "다음 공격 카드가 2회 발동";
-        if (card.effect === "glow") return `파일 맨 아래 카드 ${glowCount}장을 앞면으로 뒤집음`;
         return card.name;
       })();
       const drawMessage = card.draw > 0
@@ -482,7 +484,7 @@ export default function Home() {
         ...current,
         hand: remainingHand,
         discard: [...current.discard, card],
-        piles: nextPiles,
+        piles: current.piles,
         energy: current.energy - card.cost + (card.effect === "berserk" ? 2 : 0),
         stars: current.stars + (
           card.effect === "battlePlan"
