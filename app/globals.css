@@ -472,6 +472,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .deck-editor-floor-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 190px;
   padding: 10px 14px 12px;
   border-top: 1px solid #aaa69b;
@@ -493,13 +495,18 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-floor-heading span { color: #66645e; font-size: 11px; }
 .deck-editor-floor-heading small { color: #706e67; font-size: 10px; }
 
-.deck-editor-floor-layout { min-height: 148px; }
+.deck-editor-floor-layout {
+  min-height: 148px;
+  height: 100%;
+}
 
 .deck-editor-floor-cards {
   display: flex;
   align-items: start;
   gap: 14px;
   min-width: 0;
+  min-height: 148px;
+  height: 100%;
   padding: 9px 12px;
   overflow-x: auto;
   border: 1px dashed #817e75;
