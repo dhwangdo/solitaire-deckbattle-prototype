@@ -725,10 +725,11 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .piles {
   display: grid;
-  grid-template-columns: repeat(7, var(--card-w));
-  justify-content: center;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--card-w);
   gap: 18px;
-  min-width: max-content;
+  width: max-content;
+  margin-inline: auto;
 }
 
 .solitaire-pile {
@@ -1137,7 +1138,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   .enemy-zone { overflow-x: auto; }
   .enemies-row { justify-content: start; width: 540px; gap: 20px; }
   .pile-zone { overflow-x: auto; }
-  .piles { justify-content: start; width: 852px; padding: 0 8px; }
+  .piles { padding: 0 8px; }
   .player-zone { grid-template-columns: 180px 1fr 110px; padding-inline: 12px; }
   .player-avatar { display: none; }
   .player-panel { grid-template-columns: 1fr; }
