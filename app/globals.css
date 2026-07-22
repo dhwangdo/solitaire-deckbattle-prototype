@@ -156,7 +156,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   color: white;
   background: rgba(20,22,22,.55);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .recenter-map:hover { background: rgba(255,255,255,.12); }
