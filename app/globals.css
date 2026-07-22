@@ -311,6 +311,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .deck-editor-column-title h3 { margin: 0; font-size: 14px; }
 .deck-editor-column-title strong { font: 700 12px Arial, sans-serif; }
+.deck-editor-column-title strong.is-full { color: #9b352f; }
 
 .deck-editor-deck-list {
   display: flex;

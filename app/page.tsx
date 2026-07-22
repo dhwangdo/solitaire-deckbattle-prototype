@@ -36,6 +36,7 @@ type Screen = "map" | "battle";
 type MapPosition = { x: number; y: number };
 type RoomType = "empty" | "combat";
 type DeckEditorSide = "deck" | "inventory";
+type DeckCase = { id: string; name: string; capacity: number };
 
 type Card = {
   id: number;
@@ -107,7 +108,9 @@ type DamagePopup = {
 };
 
 const MAX_PLAYER_HP = 20;
-const STARTING_DECK_SIZE = 27;
+const STARTING_DECK_SIZE = 20;
+const STARTING_SPECIAL_CARD_COUNT = 5;
+const STARTER_DECK_CASE: DeckCase = { id: "starter", name: "시작 덱 케이스", capacity: 25 };
 const MAP_COLUMNS = 15;
 const MAP_ROWS = 60;
 const MAP_ROOM_WIDTH = 204;
@@ -188,30 +191,33 @@ function createEnemies(): EnemyState[] {
   ];
 }
 
+type CardBlueprint = Omit<Card, "id" | "revealed">;
+
+const SPECIAL_CARD_POOL: CardBlueprint[] = [
+  { kind: "strike", effect: "pommel", rarity: "special", name: "폼멜 타격", cost: 1, value: 6, draw: 1, damageType: "physical" },
+  { kind: "defend", effect: "deflect", rarity: "special", name: "흘려보내기", cost: 1, value: 5, draw: 1, damageType: "physical" },
+  { kind: "skill", effect: "battlePlan", rarity: "special", name: "전투 설계", cost: 1, value: 0, draw: 0, damageType: "physical" },
+  { kind: "skill", effect: "prepare", rarity: "special", name: "예비", cost: 0, value: 0, draw: 1, damageType: "physical" },
+  { kind: "skill", effect: "sweep", rarity: "special", name: "걷어내기", cost: 1, value: 0, draw: 0, damageType: "physical" },
+  { kind: "strike", effect: "rulerCompass", rarity: "special", name: "자와 컴퍼스", cost: 1, value: 6, draw: 0, damageType: "physical" },
+  { kind: "skill", effect: "berserk", rarity: "special", name: "광폭화", cost: 0, value: 0, draw: 0, damageType: "physical" },
+  { kind: "defend", effect: "iceShield", rarity: "special", name: "얼음 방패", cost: 1, value: 8, draw: 0, damageType: "magic" },
+  { kind: "strike", effect: "ironWave", rarity: "special", name: "철의 파동", cost: 1, value: 5, draw: 0, damageType: "physical" },
+  { kind: "strike", effect: "waterWave", rarity: "special", name: "물의 파동", cost: 1, value: 5, draw: 0, damageType: "magic" },
+  { kind: "strike", effect: "ironRampage", rarity: "special", name: "무쇠 난동", cost: 2, value: 8, draw: 0, damageType: "physical" },
+];
+
 function createDeck(): Card[] {
-  type Blueprint = Omit<Card, "id" | "revealed">;
   const make = (
     count: number,
-    blueprint: Blueprint,
+    blueprint: CardBlueprint,
   ) => Array.from({ length: count }, () => ({ ...blueprint }));
-  const blueprints: Blueprint[] = [
+  const randomSpecialCards = shuffle(SPECIAL_CARD_POOL).slice(0, STARTING_SPECIAL_CARD_COUNT);
+  const blueprints: CardBlueprint[] = [
     ...make(5, { kind: "strike", effect: "strike", rarity: "basic", name: "타격", cost: 1, value: 6, draw: 0, damageType: "physical" }),
-    ...make(3, { kind: "defend", effect: "defend", rarity: "basic", name: "방어", cost: 1, value: 5, draw: 0, damageType: "physical" }),
-    ...make(2, { kind: "defend", effect: "defend", rarity: "basic", name: "마법 방어", cost: 1, value: 5, draw: 0, damageType: "magic" }),
-    ...make(2, { kind: "strike", effect: "pommel", rarity: "special", name: "폼멜 타격", cost: 1, value: 6, draw: 1, damageType: "physical" }),
-    ...make(2, { kind: "defend", effect: "deflect", rarity: "special", name: "흘려보내기", cost: 1, value: 5, draw: 1, damageType: "physical" }),
-    { kind: "skill", effect: "steelHeart", rarity: "rare", name: "강철심장", cost: 1, value: 0, draw: 0, damageType: "physical" },
-    { kind: "skill", effect: "battlePlan", rarity: "special", name: "전투 설계", cost: 1, value: 0, draw: 0, damageType: "physical" },
-    ...make(2, { kind: "skill", effect: "prepare", rarity: "special", name: "예비", cost: 0, value: 0, draw: 1, damageType: "physical" }),
-    { kind: "skill", effect: "sweep", rarity: "special", name: "걷어내기", cost: 1, value: 0, draw: 0, damageType: "physical" },
-    { kind: "strike", effect: "rulerCompass", rarity: "special", name: "자와 컴퍼스", cost: 1, value: 6, draw: 0, damageType: "physical" },
-    { kind: "skill", effect: "berserk", rarity: "special", name: "광폭화", cost: 0, value: 0, draw: 0, damageType: "physical" },
-    { kind: "skill", effect: "transcend", rarity: "rare", name: "초월", cost: 4, value: 0, draw: 0, damageType: "physical" },
-    { kind: "skill", effect: "rapidFire", rarity: "rare", name: "연사", cost: 1, value: 0, draw: 0, damageType: "physical" },
-    { kind: "defend", effect: "iceShield", rarity: "special", name: "얼음 방패", cost: 1, value: 8, draw: 0, damageType: "magic" },
-    { kind: "strike", effect: "ironWave", rarity: "special", name: "철의 파동", cost: 1, value: 5, draw: 0, damageType: "physical" },
-    { kind: "strike", effect: "waterWave", rarity: "special", name: "물의 파동", cost: 1, value: 5, draw: 0, damageType: "magic" },
-    { kind: "strike", effect: "ironRampage", rarity: "special", name: "무쇠 난동", cost: 2, value: 8, draw: 0, damageType: "physical" },
+    ...make(5, { kind: "defend", effect: "defend", rarity: "basic", name: "방어", cost: 1, value: 5, draw: 0, damageType: "physical" }),
+    ...make(5, { kind: "defend", effect: "defend", rarity: "basic", name: "마법 방어", cost: 1, value: 5, draw: 0, damageType: "magic" }),
+    ...randomSpecialCards,
   ];
   if (blueprints.length !== STARTING_DECK_SIZE) {
     throw new Error(`Starting deck must contain ${STARTING_DECK_SIZE} cards.`);
@@ -474,12 +480,16 @@ export default function Home() {
   const startNewRun = () => {
     clearBattleTimers();
     const nextSeed = mapSeed + 1;
+    const startingDeck = createDeck();
     setRunPlayerHp(MAX_PLAYER_HP);
     setMapSeed(nextSeed);
     setMapPosition(MAP_START);
     setVisitedRooms(new Set([mapRoomKey(MAP_START)]));
     setClearedCombats(new Set());
     setActiveBattleRoom(null);
+    setDeckCards(startingDeck);
+    setInventoryCards([]);
+    setDeckEditorOpen(false);
     setGame(waitingState());
     setPhase("drawing");
     setScreen("map");
@@ -498,6 +508,10 @@ export default function Home() {
   };
 
   const moveInventoryCardToDeck = (cardId: number) => {
+    if (deckCards.length >= STARTER_DECK_CASE.capacity) {
+      setDeckEditorMessage(`${STARTER_DECK_CASE.name}에는 최대 ${STARTER_DECK_CASE.capacity}장까지 넣을 수 있습니다.`);
+      return;
+    }
     const card = inventoryCards.find((item) => item.id === cardId);
     if (!card) return;
     setInventoryCards((current) => current.filter((item) => item.id !== cardId));
@@ -1178,11 +1192,12 @@ export default function Home() {
     const currentRoomKey = mapRoomKey(mapPosition);
     const canEditDeck = getRoomType(mapPosition, mapSeed) === "empty" || clearedCombats.has(currentRoomKey);
     const deckGroups = Array.from(deckCards.reduce((groups, card) => {
-      const current = groups.get(card.effect);
+      const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
+      const current = groups.get(groupKey);
       if (current) current.cardIds.push(card.id);
-      else groups.set(card.effect, { card, cardIds: [card.id] });
+      else groups.set(groupKey, { card, cardIds: [card.id] });
       return groups;
-    }, new Map<CardEffect, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
+    }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const mapWidth = MAP_PADDING * 2 + MAP_COLUMNS * MAP_ROOM_WIDTH + (MAP_COLUMNS - 1) * MAP_CELL_GAP;
     const mapHeight = MAP_PADDING * 2 + MAP_ROWS * MAP_ROOM_HEIGHT + (MAP_ROWS - 1) * MAP_CELL_GAP;
@@ -1323,7 +1338,7 @@ export default function Home() {
                 <div>
                   <p>LOADOUT</p>
                   <h2 id="deck-editor-title">덱 편집</h2>
-                  <span>클릭하거나 반대편 영역으로 드래그해 한 장씩 이동합니다. 덱은 최소 1장이어야 합니다.</span>
+                  <span>클릭하거나 반대편 영역으로 드래그해 한 장씩 이동합니다. 덱은 1~{STARTER_DECK_CASE.capacity}장이어야 합니다.</span>
                 </div>
                 <button type="button" onClick={closeDeckEditor} aria-label="덱 편집 닫기">×</button>
               </header>
@@ -1365,6 +1380,11 @@ export default function Home() {
                 <section
                   className={`deck-editor-column deck-list-column ${deckEditorDropTarget === "deck" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
+                    if (deckEditorDrag?.source === "inventory" && deckCards.length >= STARTER_DECK_CASE.capacity) {
+                      event.dataTransfer.dropEffect = "none";
+                      setDeckEditorDropTarget(null);
+                      return;
+                    }
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
                     setDeckEditorDropTarget("deck");
@@ -1372,14 +1392,17 @@ export default function Home() {
                   onDrop={(event) => dropDeckEditorCard(event, "deck")}
                 >
                   <div className="deck-editor-column-title">
-                    <h3>덱</h3><strong>{deckCards.length}장</strong>
+                    <h3>{STARTER_DECK_CASE.name}</h3>
+                    <strong className={deckCards.length >= STARTER_DECK_CASE.capacity ? "is-full" : ""}>
+                      {deckCards.length} / {STARTER_DECK_CASE.capacity}
+                    </strong>
                   </div>
                   <div className="deck-editor-deck-list">
                     {deckGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
                         className={`deck-list-entry rarity-${card.rarity} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
-                        key={card.effect}
+                        key={`${card.effect}:${card.damageType}:${card.name}`}
                         draggable
                         onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
                         onDragEnd={finishDeckEditorDrag}
