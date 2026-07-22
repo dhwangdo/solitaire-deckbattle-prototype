@@ -389,7 +389,6 @@ export default function Home() {
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
   const [deckEditorMessage, setDeckEditorMessage] = useState("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
   const [deckEditorSnapshot, setDeckEditorSnapshot] = useState<DeckEditorSnapshot | null>(null);
-  const [floorOriginIds, setFloorOriginIds] = useState<Set<number>>(() => new Set());
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
   const [dragging, setDragging] = useState<DragState | null>(null);
@@ -482,15 +481,14 @@ export default function Home() {
   };
 
   const deactivateFloorCardsOnLeave = (roomKey: string) => {
-    const cardsToDeactivate = (roomDrops[roomKey] ?? []).filter((card) => card.active && !floorOriginIds.has(card.id));
-    if (cardsToDeactivate.length === 0) return;
-    const pendingIds = new Set(cardsToDeactivate.map((card) => card.id));
-    setRoomDrops((current) => ({
-      ...current,
-      [roomKey]: (current[roomKey] ?? []).map((card) => pendingIds.has(card.id)
-        ? { ...card, active: false }
-        : card),
-    }));
+    setRoomDrops((current) => {
+      const floorCards = current[roomKey] ?? [];
+      if (!floorCards.some((card) => card.active)) return current;
+      return {
+        ...current,
+        [roomKey]: floorCards.map((card) => card.active ? { ...card, active: false } : card),
+      };
+    });
   };
 
   const moveOnMap = (deltaX: number, deltaY: number) => {
@@ -508,7 +506,6 @@ export default function Home() {
 
     deactivateFloorCardsOnLeave(mapRoomKey(mapPosition));
     const roomKey = mapRoomKey(nextPosition);
-    setFloorOriginIds(new Set((roomDrops[roomKey] ?? []).map((card) => card.id)));
     setMapPosition(nextPosition);
     setVisitedRooms((current) => new Set(current).add(roomKey));
 
@@ -526,7 +523,6 @@ export default function Home() {
         ...current,
         [activeBattleRoom]: landingDrops,
       }));
-      setFloorOriginIds(new Set(landingDrops.map((card) => card.id)));
     }
     setRunPlayerHp(game.playerHp);
     setBattleRewards([]);
@@ -550,7 +546,6 @@ export default function Home() {
     setBattleRewards([]);
     setDeckEditorOpen(false);
     setDeckEditorSnapshot(null);
-    setFloorOriginIds(new Set());
     setGame(waitingState());
     setPhase("drawing");
     setScreen("map");
@@ -1382,10 +1377,7 @@ export default function Home() {
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const currentFloorCards = roomDrops[currentRoomKey] ?? [];
     const floorGroups = Array.from(currentFloorCards.reduce((groups, card) => {
-      const willDeactivate = card.active && (
-        initialEditorDeckIds.has(card.id)
-        || !floorOriginIds.has(card.id)
-      );
+      const willDeactivate = card.active;
       const groupKey = `${card.effect}:${card.damageType}:${card.name}:${card.active}:${willDeactivate}`;
       const current = groups.get(groupKey);
       if (current) current.cardIds.push(card.id);
@@ -1541,7 +1533,10 @@ export default function Home() {
                   <h2 id="deck-editor-title">덱 편집</h2>
                   <span>편집 시작 때 덱에 있었지만 확정 때 덱 밖에 있는 카드만 비활성화됩니다. 인벤토리는 최대 {INVENTORY_CAPACITY}장입니다.</span>
                 </div>
-                <button type="button" onClick={cancelDeckEditor} aria-label="덱 편집 취소하고 닫기">×</button>
+                <div className="deck-editor-header-actions">
+                  <button type="button" className="cancel" onClick={cancelDeckEditor}>취소</button>
+                  <button type="button" className="confirm" onClick={confirmDeckEditor}>편집 확인</button>
+                </div>
               </header>
 
               <div className="deck-editor-columns">
@@ -1668,10 +1663,6 @@ export default function Home() {
 
               <footer className="deck-editor-footer">
                 <span role="status" aria-live="polite">{deckEditorMessage}</span>
-                <div className="deck-editor-footer-actions">
-                  <button type="button" onClick={cancelDeckEditor}>취소</button>
-                  <button type="button" onClick={confirmDeckEditor}>편집 완료</button>
-                </div>
               </footer>
             </section>
           </div>

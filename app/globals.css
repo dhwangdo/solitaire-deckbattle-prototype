@@ -305,7 +305,27 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-header p { margin: 0 0 3px; color: #77736a; font: 9px Arial, sans-serif; letter-spacing: .15em; }
 .deck-editor-header h2 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-header span { display: block; margin-top: 5px; color: #6f716d; font: 11px Arial, sans-serif; }
-.deck-editor-header > button { width: 34px; height: 34px; border: 1px solid #9b968a; border-radius: 3px; background: white; cursor: pointer; font-size: 22px; }
+
+.deck-editor-header-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.deck-editor-header-actions button {
+  min-width: 78px;
+  padding: 9px 14px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: white;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.deck-editor-header-actions .cancel { border-color: #7c2926; background: #ad3f38; }
+.deck-editor-header-actions .confirm { border-color: #265b39; background: #34794c; }
+.deck-editor-header-actions button:hover { filter: brightness(1.08); }
+.deck-editor-header-actions button:focus-visible { outline: 3px solid #315f88; outline-offset: 2px; }
 
 .deck-editor-columns {
   display: grid;
@@ -553,9 +573,6 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .deck-editor-footer span { color: #555750; }
-.deck-editor-footer button { flex: none; padding: 8px 14px; border: 1px solid #6f6c64; border-radius: 3px; background: white; cursor: pointer; font-weight: 700; }
-.deck-editor-footer-actions { display: flex; gap: 8px; }
-.deck-editor-footer-actions button:first-child { color: #66635d; background: #ece9e1; }
 
 .battlefield {
   position: relative;
@@ -1312,8 +1329,10 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   .deck-editor-trigger > span:last-child { display: none; }
   .deck-editor-overlay { padding: 8px; }
   .deck-editor-panel { height: calc(100vh - 16px); }
-  .deck-editor-header { padding: 12px; }
+  .deck-editor-header { flex-wrap: wrap; gap: 10px; padding: 12px; }
   .deck-editor-header span { max-width: 270px; }
+  .deck-editor-header-actions { width: 100%; }
+  .deck-editor-header-actions button { flex: 1; }
   .deck-editor-columns { grid-template-columns: 1fr; overflow: auto; }
   .deck-editor-column { min-height: 390px; }
   .deck-editor-column + .deck-editor-column { border-top: 1px solid #aaa69b; border-left: 0; }
