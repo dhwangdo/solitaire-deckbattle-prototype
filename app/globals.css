@@ -319,13 +319,15 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   border-radius: 3px;
   color: white;
   cursor: pointer;
+  font-size: 10px;
   font-weight: 800;
 }
 
 .deck-editor-header-actions .cancel { border-color: #7c2926; background: #ad3f38; }
 .deck-editor-header-actions .confirm { border-color: #265b39; background: #34794c; }
-.deck-editor-header-actions button:hover { filter: brightness(1.08); }
+.deck-editor-header-actions button:not(:disabled):hover { filter: brightness(1.08); }
 .deck-editor-header-actions button:focus-visible { outline: 3px solid #315f88; outline-offset: 2px; }
+.deck-editor-header-actions button:disabled { cursor: not-allowed; filter: grayscale(.7); opacity: .42; }
 
 .deck-editor-columns {
   display: grid;

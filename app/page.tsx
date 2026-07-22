@@ -556,10 +556,6 @@ export default function Home() {
       setDeckEditorMessage("덱에는 반드시 카드가 1장 이상 있어야 합니다.");
       return;
     }
-    if (inventoryCards.length >= INVENTORY_CAPACITY) {
-      setDeckEditorMessage(`인벤토리는 최대 ${INVENTORY_CAPACITY}장까지 보관할 수 있습니다.`);
-      return;
-    }
     const card = deckCards.find((item) => item.id === cardId);
     if (!card) return;
     setDeckCards((current) => current.filter((item) => item.id !== cardId));
@@ -592,10 +588,6 @@ export default function Home() {
   };
 
   const moveFloorCardToInventory = (cardId: number) => {
-    if (inventoryCards.length >= INVENTORY_CAPACITY) {
-      setDeckEditorMessage(`인벤토리는 최대 ${INVENTORY_CAPACITY}장까지 보관할 수 있습니다.`);
-      return;
-    }
     const roomKey = mapRoomKey(mapPosition);
     const card = (roomDrops[roomKey] ?? []).find((item) => item.id === cardId);
     if (!card) return;
@@ -686,6 +678,10 @@ export default function Home() {
   };
 
   const confirmDeckEditor = () => {
+    if (inventoryCards.length > INVENTORY_CAPACITY) {
+      setDeckEditorMessage(`인벤토리를 ${INVENTORY_CAPACITY}장 이하로 줄여야 편집을 확인할 수 있습니다.`);
+      return;
+    }
     if (deckEditorSnapshot) {
       const finalDeckIds = new Set(deckCards.map((card) => card.id));
       const removedIds = new Set(deckEditorSnapshot.deck
@@ -1531,11 +1527,16 @@ export default function Home() {
                 <div>
                   <p>LOADOUT</p>
                   <h2 id="deck-editor-title">덱 편집</h2>
-                  <span>편집 시작 때 덱에 있었지만 확정 때 덱 밖에 있는 카드만 비활성화됩니다. 인벤토리는 최대 {INVENTORY_CAPACITY}장입니다.</span>
+                  <span>편집 시작 때 덱에 있었지만 확정 때 덱 밖에 있는 카드만 비활성화됩니다. 인벤토리가 {INVENTORY_CAPACITY}장을 넘으면 편집을 확인할 수 없습니다.</span>
                 </div>
                 <div className="deck-editor-header-actions">
                   <button type="button" className="cancel" onClick={cancelDeckEditor}>취소</button>
-                  <button type="button" className="confirm" onClick={confirmDeckEditor}>편집 확인</button>
+                  <button
+                    type="button"
+                    className="confirm"
+                    onClick={confirmDeckEditor}
+                    disabled={inventoryCards.length > INVENTORY_CAPACITY}
+                  >편집 확인</button>
                 </div>
               </header>
 
@@ -1543,12 +1544,6 @@ export default function Home() {
                 <section
                   className={`deck-editor-column inventory-column ${deckEditorDropTarget === "inventory" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
-                    if ((deckEditorDrag?.source === "deck" || deckEditorDrag?.source === "floor")
-                      && inventoryCards.length >= INVENTORY_CAPACITY) {
-                      event.dataTransfer.dropEffect = "none";
-                      setDeckEditorDropTarget(null);
-                      return;
-                    }
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
                     setDeckEditorDropTarget("inventory");
@@ -1557,7 +1552,7 @@ export default function Home() {
                 >
                   <div className="deck-editor-column-title">
                     <h3>인벤토리</h3>
-                    <strong className={inventoryCards.length >= INVENTORY_CAPACITY ? "is-full" : ""}>
+                    <strong className={inventoryCards.length > INVENTORY_CAPACITY ? "is-full" : ""}>
                       {inventoryCards.length} / {INVENTORY_CAPACITY}
                     </strong>
                   </div>
@@ -1571,7 +1566,11 @@ export default function Home() {
                         onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "inventory")}
                         onDragEnd={finishDeckEditorDrag}
                         onClick={() => moveInventoryCardToDeck(cardIds.at(-1)!)}
-                        aria-label={`${card.name} ${cardIds.length}장, 한 장을 전투 덱으로 이동`}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          moveInventoryCardToFloor(cardIds.at(-1)!);
+                        }}
+                        aria-label={`${card.name} ${cardIds.length}장, 좌클릭하면 덱으로 이동, 우클릭하면 바닥으로 이동`}
                       >
                         <CardFace card={card} />
                         {cardIds.length > 1 && <span className="inventory-card-count">x{cardIds.length}</span>}
