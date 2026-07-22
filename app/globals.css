@@ -450,25 +450,36 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   font: 800 13px Arial, sans-serif;
 }
 
+.deck-editor-panel:has(.will-deactivate) {
+  animation: pending-deactivation-clock 1.2s steps(1, end) infinite;
+}
+
 .deck-editor-card.will-deactivate {
   outline: 2px dashed #b76b28;
   outline-offset: 2px;
-  animation: pending-card-deactivation 1.2s steps(1, end) infinite;
+  filter: var(--pending-card-filter, grayscale(0));
+  opacity: var(--pending-card-opacity, 1);
 }
 
 .deck-editor-card.will-deactivate .card-effect,
 .deck-editor-card.will-deactivate .card-effect * {
-  animation: pending-effect-deactivation 1.2s steps(1, end) infinite;
+  color: var(--pending-effect-color, inherit);
+  text-decoration: var(--pending-effect-decoration, none);
 }
 
-@keyframes pending-card-deactivation {
-  0%, 49% { filter: grayscale(0); opacity: 1; }
-  50%, 100% { filter: grayscale(1); opacity: .58; }
-}
-
-@keyframes pending-effect-deactivation {
-  0%, 49% { color: inherit; text-decoration: none; }
-  50%, 100% { color: #6f6f6c; text-decoration: line-through; }
+@keyframes pending-deactivation-clock {
+  0%, 49% {
+    --pending-card-filter: grayscale(0);
+    --pending-card-opacity: 1;
+    --pending-effect-color: inherit;
+    --pending-effect-decoration: none;
+  }
+  50%, 100% {
+    --pending-card-filter: grayscale(1);
+    --pending-card-opacity: .58;
+    --pending-effect-color: #6f6f6c;
+    --pending-effect-decoration: line-through;
+  }
 }
 
 .deck-editor-floor-section {
