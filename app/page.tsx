@@ -692,10 +692,11 @@ export default function Home() {
 
   const takeDraggedTopWithStars = (drag: DragState) => {
     if (drag.source.type !== "pile") return;
+    const source = drag.source;
     setGame((current) => {
-      const sourcePile = current.piles[drag.source.pileIndex];
+      const sourcePile = current.piles[source.pileIndex];
       const isTopCard = drag.cards.length === 1
-        && drag.source.cardIndex === sourcePile.length - 1
+        && source.cardIndex === sourcePile.length - 1
         && sourcePile.at(-1)?.id === drag.card.id;
       if (!isTopCard) {
         return { ...current, message: "손으로 가져올 수 있는 카드는 파일 맨 위 카드뿐입니다." };
@@ -704,9 +705,9 @@ export default function Home() {
         return { ...current, message: "맨 위 카드를 가져오려면 ★★가 필요합니다." };
       }
       const nextPiles = current.piles.map((pile) => [...pile]);
-      const drawnCard = nextPiles[drag.source.pileIndex].pop();
+      const drawnCard = nextPiles[source.pileIndex].pop();
       if (!drawnCard) return current;
-      const remainingPile = nextPiles[drag.source.pileIndex];
+      const remainingPile = nextPiles[source.pileIndex];
       if (remainingPile.length > 0) {
         const nextTop = remainingPile.length - 1;
         remainingPile[nextTop] = { ...remainingPile[nextTop], revealed: true };
