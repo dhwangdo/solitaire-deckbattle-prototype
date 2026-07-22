@@ -207,6 +207,28 @@ const SPECIAL_CARD_POOL: CardBlueprint[] = [
   { kind: "strike", effect: "ironRampage", rarity: "special", name: "무쇠 난동", cost: 2, value: 8, draw: 0, damageType: "physical" },
 ];
 
+const RARE_CARD_POOL: CardBlueprint[] = [
+  { kind: "skill", effect: "steelHeart", rarity: "rare", name: "강철심장", cost: 1, value: 0, draw: 0, damageType: "physical" },
+  { kind: "skill", effect: "transcend", rarity: "rare", name: "초월", cost: 4, value: 0, draw: 0, damageType: "physical" },
+  { kind: "skill", effect: "rapidFire", rarity: "rare", name: "연사", cost: 1, value: 0, draw: 0, damageType: "physical" },
+];
+
+function createBattleRewards(startId: number): Card[] {
+  const weightedPool = [
+    ...SPECIAL_CARD_POOL.map((card) => ({ card, weight: 1 })),
+    ...RARE_CARD_POOL.map((card) => ({ card, weight: 0.5 })),
+  ];
+  const totalWeight = weightedPool.reduce((total, entry) => total + entry.weight, 0);
+  return Array.from({ length: 2 }, (_, index) => {
+    let roll = Math.random() * totalWeight;
+    const selected = weightedPool.find((entry) => {
+      roll -= entry.weight;
+      return roll < 0;
+    }) ?? weightedPool.at(-1)!;
+    return { ...selected.card, id: startId + index, revealed: false };
+  });
+}
+
 function createDeck(): Card[] {
   const make = (
     count: number,
@@ -351,6 +373,7 @@ export default function Home() {
   const [mapZoom, setMapZoom] = useState(1);
   const [deckCards, setDeckCards] = useState<Card[]>(createDeck);
   const [inventoryCards, setInventoryCards] = useState<Card[]>([]);
+  const [battleRewards, setBattleRewards] = useState<Card[]>([]);
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorSide } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorSide | null>(null);
@@ -422,6 +445,7 @@ export default function Home() {
     setLockedEnemyId(null);
     setAttackingEnemyId(null);
     setDamagePopup(null);
+    setBattleRewards([]);
     setPhase("drawing");
     setGame(dealtState(playerHp, deckCards));
     setScreen("battle");
@@ -473,6 +497,8 @@ export default function Home() {
       setClearedCombats((current) => new Set(current).add(activeBattleRoom));
     }
     setRunPlayerHp(game.playerHp);
+    setInventoryCards((current) => [...current, ...battleRewards]);
+    setBattleRewards([]);
     setActiveBattleRoom(null);
     setScreen("map");
   };
@@ -489,6 +515,7 @@ export default function Home() {
     setActiveBattleRoom(null);
     setDeckCards(startingDeck);
     setInventoryCards([]);
+    setBattleRewards([]);
     setDeckEditorOpen(false);
     setGame(waitingState());
     setPhase("drawing");
@@ -664,6 +691,30 @@ export default function Home() {
   }, [game.enemies, lockedEnemyId]);
 
   const playCard = (card: Card, targetEnemyId?: string) => {
+    const isRewardAttack = card.kind === "strike";
+    const isRewardAttackAll = card.effect === "ironRampage";
+    const rewardTarget = game.enemies.find((enemy) => enemy.id === targetEnemyId);
+    const canResolveRewardAttack = isRewardAttack
+      && game.status === "playing"
+      && phase === "playing"
+      && game.pendingDraws === 0
+      && game.pendingDiscards === 0
+      && !game.pendingSweep
+      && game.energy >= card.cost
+      && (isRewardAttackAll || Boolean(rewardTarget && rewardTarget.hp > 0));
+    if (canResolveRewardAttack) {
+      const repetitions = game.doubleNextAttack ? 2 : 1;
+      const damage = (card.value + game.strength) * repetitions;
+      const enemiesAfterAttack = game.enemies.map((enemy) => isRewardAttackAll || enemy.id === targetEnemyId
+        ? { ...enemy, hp: Math.max(0, enemy.hp - damage) }
+        : enemy);
+      if (enemiesAfterAttack.every((enemy) => enemy.hp === 0)) {
+        const ownedCards = [...deckCards, ...inventoryCards];
+        const nextId = ownedCards.reduce((highest, ownedCard) => Math.max(highest, ownedCard.id), -1) + 1;
+        setBattleRewards(createBattleRewards(nextId));
+      }
+    }
+
     setGame((current) => {
       if (
         current.status !== "playing" ||
@@ -938,40 +989,6 @@ export default function Home() {
     });
   };
 
-  const takeDraggedTopWithStars = (drag: DragState) => {
-    if (drag.source.type !== "pile") return;
-    const source = drag.source;
-    setGame((current) => {
-      const sourcePile = current.piles[source.pileIndex];
-      const isTopCard = drag.cards.length === 1
-        && source.cardIndex === sourcePile.length - 1
-        && sourcePile.at(-1)?.id === drag.card.id;
-      if (!isTopCard) {
-        return { ...current, message: "손으로 가져올 수 있는 카드는 파일 맨 위 카드뿐입니다." };
-      }
-      if (current.stars < 2) {
-        return { ...current, message: "맨 위 카드를 가져오려면 ★★가 필요합니다." };
-      }
-      const nextPiles = current.piles.map((pile) => [...pile]);
-      const drawnCard = nextPiles[source.pileIndex].pop();
-      if (!drawnCard) return current;
-      const remainingPile = nextPiles[source.pileIndex];
-      if (remainingPile.length > 0) {
-        const nextTop = remainingPile.length - 1;
-        remainingPile[nextTop] = { ...remainingPile[nextTop], revealed: true };
-      }
-      const action = `★★를 사용해 ${drawnCard.name}을(를) 손으로 가져옴`;
-      return {
-        ...current,
-        piles: nextPiles,
-        hand: [...current.hand, { ...drawnCard, revealed: true }],
-        stars: current.stars - 2,
-        message: action,
-        history: [action, ...current.history].slice(0, 5),
-      };
-    });
-  };
-
   const finishDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const current = dragRef.current;
     if (!current) return;
@@ -984,7 +1001,10 @@ export default function Home() {
       const targetPileIndex = dropZone?.startsWith("pile:") ? Number(dropZone.slice(5)) : undefined;
 
       if (dropZone === "hand" && current.source.type === "pile") {
-        takeDraggedTopWithStars(current);
+        setGame((state) => ({
+          ...state,
+          message: "★★로 파일 카드를 가져오는 기능은 현재 비활성화되어 있습니다.",
+        }));
         dragRef.current = null;
         setDragging(null);
         return;
@@ -1673,14 +1693,33 @@ export default function Home() {
 
         {game.status !== "playing" && (
           <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title">
-            <div className="result-card">
+            <div className={`result-card ${game.status === "won" ? "has-rewards" : ""}`}>
               <p>{game.status === "won" ? "BATTLE CLEARED" : "RUN ENDED"}</p>
               <h2 id="result-title">{game.status === "won" ? "승리" : "패배"}</h2>
               <span>{game.status === "won"
-                ? `${game.playerHp} 체력으로 지도로 돌아갑니다.`
+                ? `${game.playerHp} 체력으로 전투를 마쳤습니다.`
                 : `${game.turn}턴에서 탐험이 끝났습니다.`}</span>
-              <button onClick={game.status === "won" ? returnToMap : startNewRun}>
-                {game.status === "won" ? "지도로 돌아가기" : "새 탐험 시작"}
+              {game.status === "won" && (
+                <div className="battle-reward-section">
+                  <strong>전투 보상</strong>
+                  <small>두 카드 모두 인벤토리에 추가됩니다</small>
+                  <div className="battle-reward-cards">
+                    {battleRewards.map((card) => (
+                      <div
+                        className={`battle-reward-card card-face ${card.kind} ${card.damageType}`}
+                        key={card.id}
+                      >
+                        <CardFace card={card} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button
+                onClick={game.status === "won" ? returnToMap : startNewRun}
+                disabled={game.status === "won" && battleRewards.length < 2}
+              >
+                {game.status === "won" ? "보상 받고 지도로" : "새 탐험 시작"}
               </button>
             </div>
           </div>

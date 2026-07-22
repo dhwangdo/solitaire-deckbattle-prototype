@@ -369,7 +369,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   justify-self: end;
   min-width: 24px;
   color: #45433e;
-  font: 800 12px Arial, sans-serif;
+  font: 800 14px Arial, sans-serif;
   text-align: right;
 }
 
@@ -401,7 +401,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   padding: 1px 3px;
   color: #222;
   background: rgba(247,245,239,.9);
-  font: 800 11px Arial, sans-serif;
+  font: 800 13px Arial, sans-serif;
 }
 
 .deck-editor-empty {
@@ -1026,12 +1026,6 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   min-width: 0;
   padding: 12px 6px 0;
 }
-.dragging-from-pile .hand {
-  outline: 3px solid rgba(240,212,120,.88);
-  outline-offset: 3px;
-  background: rgba(240,212,120,.09);
-}
-
 .game-card {
   position: relative;
   flex: 0 0 var(--card-w);
@@ -1135,10 +1129,32 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   text-align: center;
 }
 
+.result-card.has-rewards { width: min(470px, 100%); }
+
 .result-card p { margin: 0 0 9px; color: var(--muted); font: 10px Arial, sans-serif; letter-spacing: .14em; }
 .result-card h2 { margin: 0 0 8px; font-size: 36px; }
 .result-card > span { display: block; color: var(--muted); font-size: 12px; }
 .result-card button { margin-top: 22px; padding: 9px 16px; border: 1px solid #5e5547; border-radius: 3px; background: white; cursor: pointer; font-weight: 700; }
+.result-card button:disabled { cursor: wait; opacity: .55; }
+
+.battle-reward-section {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid #c8c1b5;
+}
+
+.battle-reward-section > strong { display: block; font-size: 15px; }
+.battle-reward-section > small { display: block; margin-top: 3px; color: var(--muted); font: 10px Arial, sans-serif; }
+
+.battle-reward-cards {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  min-height: var(--card-h);
+  margin-top: 17px;
+}
+
+.battle-reward-card { flex: none; text-align: left; }
 
 @media (max-width: 900px) {
   .map-viewport { min-height: 520px; }
