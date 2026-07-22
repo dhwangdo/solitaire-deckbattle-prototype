@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
@@ -33,6 +34,7 @@ type Phase = "drawing" | "playing" | "discarding" | "enemy-turn";
 type Screen = "map" | "battle";
 type MapPosition = { x: number; y: number };
 type RoomType = "empty" | "combat";
+type DeckEditorSide = "deck" | "inventory";
 
 type Card = {
   id: number;
@@ -339,6 +341,8 @@ export default function Home() {
   const [deckCards, setDeckCards] = useState<Card[]>(createDeck);
   const [inventoryCards, setInventoryCards] = useState<Card[]>([]);
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
+  const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorSide } | null>(null);
+  const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorSide | null>(null);
   const [deckEditorMessage, setDeckEditorMessage] = useState("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
@@ -494,6 +498,40 @@ export default function Home() {
     setInventoryCards((current) => current.filter((item) => item.id !== cardId));
     setDeckCards((current) => [...current, card]);
     setDeckEditorMessage(`${card.name}을(를) 덱에 넣었습니다.`);
+  };
+
+  const beginDeckEditorDrag = (
+    event: ReactDragEvent<HTMLElement>,
+    cardId: number,
+    source: DeckEditorSide,
+  ) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `${source}:${cardId}`);
+    setDeckEditorDrag({ cardId, source });
+    setDeckEditorDropTarget(null);
+  };
+
+  const dropDeckEditorCard = (event: ReactDragEvent<HTMLElement>, target: DeckEditorSide) => {
+    event.preventDefault();
+    const [payloadSource, payloadId] = event.dataTransfer.getData("text/plain").split(":");
+    const source = deckEditorDrag?.source ?? (payloadSource as DeckEditorSide);
+    const cardId = deckEditorDrag?.cardId ?? Number(payloadId);
+    if (source !== target && Number.isInteger(cardId)) {
+      if (source === "deck") moveDeckCardToInventory(cardId);
+      else moveInventoryCardToDeck(cardId);
+    }
+    setDeckEditorDrag(null);
+    setDeckEditorDropTarget(null);
+  };
+
+  const finishDeckEditorDrag = () => {
+    setDeckEditorDrag(null);
+    setDeckEditorDropTarget(null);
+  };
+
+  const closeDeckEditor = () => {
+    finishDeckEditorDrag();
+    setDeckEditorOpen(false);
   };
 
   const beginMapDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1111,6 +1149,13 @@ export default function Home() {
     const exploredCount = visitedRooms.size;
     const currentRoomKey = mapRoomKey(mapPosition);
     const canEditDeck = getRoomType(mapPosition, mapSeed) === "empty" || clearedCombats.has(currentRoomKey);
+    const deckGroups = Array.from(deckCards.reduce((groups, card) => {
+      const current = groups.get(card.effect);
+      if (current) current.cardIds.push(card.id);
+      else groups.set(card.effect, { card, cardIds: [card.id] });
+      return groups;
+    }, new Map<CardEffect, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
+      left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const mapWidth = MAP_PADDING * 2 + MAP_COLUMNS * MAP_ROOM_WIDTH + (MAP_COLUMNS - 1) * MAP_CELL_GAP;
     const mapHeight = MAP_PADDING * 2 + MAP_ROWS * MAP_ROOM_HEIGHT + (MAP_ROWS - 1) * MAP_CELL_GAP;
 
@@ -1134,6 +1179,7 @@ export default function Home() {
                 type="button"
                 className="deck-editor-trigger"
                 onClick={() => {
+                  finishDeckEditorDrag();
                   setDeckEditorMessage("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
                   setDeckEditorOpen(true);
                 }}
@@ -1238,38 +1284,59 @@ export default function Home() {
         </section>
 
         {deckEditorOpen && (
-          <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title" onClick={() => setDeckEditorOpen(false)}>
+          <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title" onClick={closeDeckEditor}>
             <section className="deck-editor-panel" onClick={(event) => event.stopPropagation()}>
               <header className="deck-editor-header">
                 <div>
                   <p>LOADOUT</p>
                   <h2 id="deck-editor-title">덱 편집</h2>
-                  <span>카드를 클릭하면 반대편으로 이동합니다. 덱은 최소 1장이어야 합니다.</span>
+                  <span>클릭하거나 반대편 영역으로 드래그해 한 장씩 이동합니다. 덱은 최소 1장이어야 합니다.</span>
                 </div>
-                <button type="button" onClick={() => setDeckEditorOpen(false)} aria-label="덱 편집 닫기">×</button>
+                <button type="button" onClick={closeDeckEditor} aria-label="덱 편집 닫기">×</button>
               </header>
 
               <div className="deck-editor-columns">
-                <section className="deck-editor-column">
+                <section
+                  className={`deck-editor-column deck-list-column ${deckEditorDropTarget === "deck" ? "is-drop-target" : ""}`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDeckEditorDropTarget("deck");
+                  }}
+                  onDrop={(event) => dropDeckEditorCard(event, "deck")}
+                >
                   <div className="deck-editor-column-title">
-                    <h3>전투 덱</h3><strong>{deckCards.length}장</strong>
+                    <h3>덱</h3><strong>{deckCards.length}장</strong>
                   </div>
-                  <div className="deck-editor-card-list">
-                    {deckCards.map((card) => (
+                  <div className="deck-editor-deck-list">
+                    {deckGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
-                        className={`deck-editor-card card-face ${card.kind} ${card.damageType}`}
-                        key={card.id}
-                        onClick={() => moveDeckCardToInventory(card.id)}
-                        aria-label={`${card.name}을 인벤토리로 이동`}
+                        className={`deck-list-entry rarity-${card.rarity} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
+                        key={card.effect}
+                        draggable
+                        onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
+                        onDragEnd={finishDeckEditorDrag}
+                        onClick={() => moveDeckCardToInventory(cardIds.at(-1)!)}
+                        aria-label={`${card.name} ${cardIds.length}장, 한 장을 인벤토리로 이동`}
                       >
-                        <CardFace card={card} />
+                        <span className="deck-list-cost">{card.cost}</span>
+                        <strong>{card.name}</strong>
+                        <span className="deck-list-count">{cardIds.length}</span>
                       </button>
                     ))}
                   </div>
                 </section>
 
-                <section className="deck-editor-column inventory-column">
+                <section
+                  className={`deck-editor-column inventory-column ${deckEditorDropTarget === "inventory" ? "is-drop-target" : ""}`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDeckEditorDropTarget("inventory");
+                  }}
+                  onDrop={(event) => dropDeckEditorCard(event, "inventory")}
+                >
                   <div className="deck-editor-column-title">
                     <h3>인벤토리</h3><strong>{inventoryCards.length}장</strong>
                   </div>
@@ -1277,8 +1344,11 @@ export default function Home() {
                     {inventoryCards.map((card) => (
                       <button
                         type="button"
-                        className={`deck-editor-card card-face ${card.kind} ${card.damageType}`}
+                        className={`deck-editor-card card-face ${card.kind} ${card.damageType} ${deckEditorDrag?.cardId === card.id ? "is-dragging" : ""}`}
                         key={card.id}
+                        draggable
+                        onDragStart={(event) => beginDeckEditorDrag(event, card.id, "inventory")}
+                        onDragEnd={finishDeckEditorDrag}
                         onClick={() => moveInventoryCardToDeck(card.id)}
                         aria-label={`${card.name}을 전투 덱으로 이동`}
                       >
@@ -1294,7 +1364,7 @@ export default function Home() {
 
               <footer className="deck-editor-footer">
                 <span role="status" aria-live="polite">{deckEditorMessage}</span>
-                <button type="button" onClick={() => setDeckEditorOpen(false)}>편집 완료</button>
+                <button type="button" onClick={closeDeckEditor}>편집 완료</button>
               </footer>
             </section>
           </div>
