@@ -52,6 +52,13 @@ type Card = {
   active: boolean;
 };
 
+type DeckEditorSnapshot = {
+  roomKey: string;
+  deck: Card[];
+  inventory: Card[];
+  floor: Card[];
+};
+
 type EnemyAttack = {
   type: DamageType;
   value: number;
@@ -381,8 +388,8 @@ export default function Home() {
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorArea } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
   const [deckEditorMessage, setDeckEditorMessage] = useState("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
-  const [pendingDeckDeactivationIds, setPendingDeckDeactivationIds] = useState<Set<number>>(() => new Set());
-  const [pendingFloorDeactivationIds, setPendingFloorDeactivationIds] = useState<Set<number>>(() => new Set());
+  const [deckEditorSnapshot, setDeckEditorSnapshot] = useState<DeckEditorSnapshot | null>(null);
+  const [floorOriginIds, setFloorOriginIds] = useState<Set<number>>(() => new Set());
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
   const [dragging, setDragging] = useState<DragState | null>(null);
@@ -475,15 +482,15 @@ export default function Home() {
   };
 
   const deactivateFloorCardsOnLeave = (roomKey: string) => {
-    const pendingIds = pendingFloorDeactivationIds;
-    if (pendingIds.size === 0) return;
+    const cardsToDeactivate = (roomDrops[roomKey] ?? []).filter((card) => card.active && !floorOriginIds.has(card.id));
+    if (cardsToDeactivate.length === 0) return;
+    const pendingIds = new Set(cardsToDeactivate.map((card) => card.id));
     setRoomDrops((current) => ({
       ...current,
       [roomKey]: (current[roomKey] ?? []).map((card) => pendingIds.has(card.id)
         ? { ...card, active: false }
         : card),
     }));
-    setPendingFloorDeactivationIds(new Set());
   };
 
   const moveOnMap = (deltaX: number, deltaY: number) => {
@@ -501,6 +508,7 @@ export default function Home() {
 
     deactivateFloorCardsOnLeave(mapRoomKey(mapPosition));
     const roomKey = mapRoomKey(nextPosition);
+    setFloorOriginIds(new Set((roomDrops[roomKey] ?? []).map((card) => card.id)));
     setMapPosition(nextPosition);
     setVisitedRooms((current) => new Set(current).add(roomKey));
 
@@ -512,11 +520,13 @@ export default function Home() {
 
   const returnToMap = () => {
     if (activeBattleRoom) {
+      const landingDrops = [...(roomDrops[activeBattleRoom] ?? []), ...battleRewards];
       setClearedCombats((current) => new Set(current).add(activeBattleRoom));
       setRoomDrops((current) => ({
         ...current,
-        [activeBattleRoom]: [...(current[activeBattleRoom] ?? []), ...battleRewards],
+        [activeBattleRoom]: landingDrops,
       }));
+      setFloorOriginIds(new Set(landingDrops.map((card) => card.id)));
     }
     setRunPlayerHp(game.playerHp);
     setBattleRewards([]);
@@ -539,8 +549,8 @@ export default function Home() {
     setRoomDrops({});
     setBattleRewards([]);
     setDeckEditorOpen(false);
-    setPendingDeckDeactivationIds(new Set());
-    setPendingFloorDeactivationIds(new Set());
+    setDeckEditorSnapshot(null);
+    setFloorOriginIds(new Set());
     setGame(waitingState());
     setPhase("drawing");
     setScreen("map");
@@ -559,8 +569,7 @@ export default function Home() {
     if (!card) return;
     setDeckCards((current) => current.filter((item) => item.id !== cardId));
     setInventoryCards((current) => [...current, card]);
-    setPendingDeckDeactivationIds((current) => new Set(current).add(cardId));
-    setDeckEditorMessage(`${card.name}을(를) 뺐습니다. 편집을 확정하면 비활성화됩니다.`);
+    setDeckEditorMessage(`${card.name}을(를) 덱에서 뺐습니다.`);
   };
 
   const moveInventoryCardToDeck = (cardId: number) => {
@@ -572,11 +581,6 @@ export default function Home() {
     if (!card) return;
     setInventoryCards((current) => current.filter((item) => item.id !== cardId));
     setDeckCards((current) => [...current, card]);
-    setPendingDeckDeactivationIds((current) => {
-      const next = new Set(current);
-      next.delete(cardId);
-      return next;
-    });
     setDeckEditorMessage(`${card.name}을(를) 덱에 넣었습니다.`);
   };
 
@@ -589,7 +593,6 @@ export default function Home() {
       ...current,
       [roomKey]: [...(current[roomKey] ?? []), card],
     }));
-    setPendingFloorDeactivationIds((current) => new Set(current).add(cardId));
     setDeckEditorMessage(`${card.name}을(를) 바닥에 놓았습니다. 방을 떠나면 비활성화됩니다.`);
   };
 
@@ -606,11 +609,6 @@ export default function Home() {
       [roomKey]: (current[roomKey] ?? []).filter((item) => item.id !== cardId),
     }));
     setInventoryCards((current) => [...current, card]);
-    setPendingFloorDeactivationIds((current) => {
-      const next = new Set(current);
-      next.delete(cardId);
-      return next;
-    });
     setDeckEditorMessage(`${card.name}을(를) 인벤토리에 주웠습니다.`);
   };
 
@@ -645,19 +643,52 @@ export default function Home() {
     setDeckEditorDropTarget(null);
   };
 
-  const closeDeckEditor = () => {
-    const removedIds = pendingDeckDeactivationIds;
-    if (removedIds.size > 0) {
-      setInventoryCards((current) => current.map((card) => removedIds.has(card.id)
-        ? { ...card, active: false }
-        : card));
-      setRoomDrops((current) => Object.fromEntries(Object.entries(current).map(([roomKey, cards]) => [
-        roomKey,
-        cards.map((card) => removedIds.has(card.id) ? { ...card, active: false } : card),
-      ])));
-      setDeckEditorMessage(`${removedIds.size}장의 카드를 비활성화했습니다.`);
+  const openDeckEditor = (message: string) => {
+    const roomKey = mapRoomKey(mapPosition);
+    finishDeckEditorDrag();
+    setDeckEditorSnapshot({
+      roomKey,
+      deck: [...deckCards],
+      inventory: [...inventoryCards],
+      floor: [...(roomDrops[roomKey] ?? [])],
+    });
+    setDeckEditorMessage(message);
+    setDeckEditorOpen(true);
+  };
+
+  const confirmDeckEditor = () => {
+    if (deckEditorSnapshot) {
+      const finalDeckIds = new Set(deckCards.map((card) => card.id));
+      const removedIds = new Set(deckEditorSnapshot.deck
+        .filter((card) => !finalDeckIds.has(card.id))
+        .map((card) => card.id));
+      if (removedIds.size > 0) {
+        setInventoryCards((current) => current.map((card) => removedIds.has(card.id)
+          ? { ...card, active: false }
+          : card));
+        setRoomDrops((current) => ({
+          ...current,
+          [deckEditorSnapshot.roomKey]: (current[deckEditorSnapshot.roomKey] ?? []).map((card) => removedIds.has(card.id)
+            ? { ...card, active: false }
+            : card),
+        }));
+      }
     }
-    setPendingDeckDeactivationIds(new Set());
+    setDeckEditorSnapshot(null);
+    finishDeckEditorDrag();
+    setDeckEditorOpen(false);
+  };
+
+  const cancelDeckEditor = () => {
+    if (deckEditorSnapshot) {
+      setDeckCards(deckEditorSnapshot.deck);
+      setInventoryCards(deckEditorSnapshot.inventory);
+      setRoomDrops((current) => ({
+        ...current,
+        [deckEditorSnapshot.roomKey]: deckEditorSnapshot.floor,
+      }));
+    }
+    setDeckEditorSnapshot(null);
     finishDeckEditorDrag();
     setDeckEditorOpen(false);
   };
@@ -1305,8 +1336,9 @@ export default function Home() {
       return groups;
     }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
+    const initialEditorDeckIds = new Set(deckEditorSnapshot?.deck.map((card) => card.id) ?? []);
     const inventoryGroups = Array.from(inventoryCards.reduce((groups, card) => {
-      const willDeactivate = card.active && pendingDeckDeactivationIds.has(card.id);
+      const willDeactivate = card.active && initialEditorDeckIds.has(card.id);
       const groupKey = `${card.effect}:${card.damageType}:${card.name}:${card.active}:${willDeactivate}`;
       const current = groups.get(groupKey);
       if (current) current.cardIds.push(card.id);
@@ -1317,8 +1349,8 @@ export default function Home() {
     const currentFloorCards = roomDrops[currentRoomKey] ?? [];
     const floorGroups = Array.from(currentFloorCards.reduce((groups, card) => {
       const willDeactivate = card.active && (
-        pendingDeckDeactivationIds.has(card.id)
-        || pendingFloorDeactivationIds.has(card.id)
+        initialEditorDeckIds.has(card.id)
+        || !floorOriginIds.has(card.id)
       );
       const groupKey = `${card.effect}:${card.damageType}:${card.name}:${card.active}:${willDeactivate}`;
       const current = groups.get(groupKey);
@@ -1349,12 +1381,7 @@ export default function Home() {
               <button
                 type="button"
                 className="deck-editor-trigger"
-                onClick={() => {
-                  finishDeckEditorDrag();
-                  setPendingDeckDeactivationIds(new Set());
-                  setDeckEditorMessage("카드를 덱과 인벤토리, 방 바닥 사이에서 옮길 수 있습니다.");
-                  setDeckEditorOpen(true);
-                }}
+                onClick={() => openDeckEditor("카드를 덱과 인벤토리, 방 바닥 사이에서 옮길 수 있습니다.")}
                 aria-label={`덱 편집, 현재 ${deckCards.length}장`}
               >
                 <span className="deck-stack-icon" aria-hidden="true" />
@@ -1462,11 +1489,7 @@ export default function Home() {
             <button
               type="button"
               className="room-floor-notice"
-              onClick={() => {
-                setPendingDeckDeactivationIds(new Set());
-                setDeckEditorMessage("바닥 카드를 인벤토리로 드래그하거나 클릭해 주울 수 있습니다.");
-                setDeckEditorOpen(true);
-              }}
+              onClick={() => openDeckEditor("바닥 카드를 인벤토리로 드래그하거나 클릭해 주울 수 있습니다.")}
             >
               <span>방 바닥</span>
               <strong>카드 {currentFloorCards.length}장</strong>
@@ -1476,15 +1499,15 @@ export default function Home() {
         </section>
 
         {deckEditorOpen && (
-          <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title" onClick={closeDeckEditor}>
+          <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title" onClick={cancelDeckEditor}>
             <section className="deck-editor-panel" onClick={(event) => event.stopPropagation()}>
               <header className="deck-editor-header">
                 <div>
                   <p>LOADOUT</p>
                   <h2 id="deck-editor-title">덱 편집</h2>
-                  <span>덱에서 뺀 카드는 편집 확정 시 비활성화됩니다. 인벤토리는 최대 {INVENTORY_CAPACITY}장입니다.</span>
+                  <span>편집 시작 때 덱에 있었지만 확정 때 덱 밖에 있는 카드만 비활성화됩니다. 인벤토리는 최대 {INVENTORY_CAPACITY}장입니다.</span>
                 </div>
-                <button type="button" onClick={closeDeckEditor} aria-label="덱 편집 닫기">×</button>
+                <button type="button" onClick={cancelDeckEditor} aria-label="덱 편집 취소하고 닫기">×</button>
               </header>
 
               <div className="deck-editor-columns">
@@ -1522,7 +1545,6 @@ export default function Home() {
                         aria-label={`${card.name} ${cardIds.length}장, 한 장을 전투 덱으로 이동`}
                       >
                         <CardFace card={card} />
-                        {willDeactivate && <span className="pending-card-warning">비활성화 예정</span>}
                         {cardIds.length > 1 && <span className="inventory-card-count">x{cardIds.length}</span>}
                       </button>
                     ))}
@@ -1601,7 +1623,6 @@ export default function Home() {
                         aria-label={`${card.name} ${cardIds.length}장, 한 장을 인벤토리에 줍기`}
                       >
                         <CardFace card={card} />
-                        {willDeactivate && <span className="pending-card-warning">비활성화 예정</span>}
                         {cardIds.length > 1 && <span className="inventory-card-count">x{cardIds.length}</span>}
                       </button>
                     ))}
@@ -1612,7 +1633,10 @@ export default function Home() {
 
               <footer className="deck-editor-footer">
                 <span role="status" aria-live="polite">{deckEditorMessage}</span>
-                <button type="button" onClick={closeDeckEditor}>편집 완료</button>
+                <div className="deck-editor-footer-actions">
+                  <button type="button" onClick={cancelDeckEditor}>취소</button>
+                  <button type="button" onClick={confirmDeckEditor}>편집 완료</button>
+                </div>
               </footer>
             </section>
           </div>

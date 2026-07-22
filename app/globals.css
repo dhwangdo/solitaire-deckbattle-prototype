@@ -453,25 +453,12 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-card.will-deactivate {
   outline: 2px dashed #b76b28;
   outline-offset: 2px;
-  animation: pending-card-deactivation 1.4s steps(1, end) infinite;
+  animation: pending-card-deactivation 1.2s steps(1, end) infinite;
 }
 
 .deck-editor-card.will-deactivate .card-effect,
 .deck-editor-card.will-deactivate .card-effect * {
-  animation: pending-effect-deactivation 1.4s steps(1, end) infinite;
-}
-
-.pending-card-warning {
-  position: absolute;
-  z-index: 9;
-  left: 50%;
-  bottom: 3px;
-  padding: 1px 3px;
-  color: #7b3f17;
-  background: rgba(255,232,187,.94);
-  font: 700 8px Arial, sans-serif;
-  white-space: nowrap;
-  transform: translateX(-50%);
+  animation: pending-effect-deactivation 1.2s steps(1, end) infinite;
 }
 
 @keyframes pending-card-deactivation {
@@ -549,6 +536,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .deck-editor-footer span { color: #555750; }
 .deck-editor-footer button { flex: none; padding: 8px 14px; border: 1px solid #6f6c64; border-radius: 3px; background: white; cursor: pointer; font-weight: 700; }
+.deck-editor-footer-actions { display: flex; gap: 8px; }
+.deck-editor-footer-actions button:first-child { color: #66635d; background: #ece9e1; }
 
 .battlefield {
   position: relative;
