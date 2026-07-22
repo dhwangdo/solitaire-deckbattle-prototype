@@ -366,14 +366,11 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .deck-list-count {
-  display: grid;
-  place-items: center;
+  justify-self: end;
   min-width: 24px;
-  height: 24px;
-  border: 1px solid #77736a;
-  border-radius: 50%;
-  background: rgba(255,255,255,.72);
+  color: #45433e;
   font: 800 12px Arial, sans-serif;
+  text-align: right;
 }
 
 .deck-editor-card-list {
@@ -395,6 +392,17 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-card:hover { z-index: 2; transform: translateY(-6px); box-shadow: 0 8px 16px rgba(0,0,0,.3); }
 .deck-editor-card:focus-visible { outline: 3px solid #2e5f85; outline-offset: 3px; }
 .deck-editor-card.is-dragging { opacity: .32; }
+
+.inventory-card-count {
+  position: absolute;
+  z-index: 8;
+  right: 5px;
+  bottom: 4px;
+  padding: 1px 3px;
+  color: #222;
+  background: rgba(247,245,239,.9);
+  font: 800 11px Arial, sans-serif;
+}
 
 .deck-editor-empty {
   grid-column: 1 / -1;

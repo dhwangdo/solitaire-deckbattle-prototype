@@ -1199,6 +1199,14 @@ export default function Home() {
       return groups;
     }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
+    const inventoryGroups = Array.from(inventoryCards.reduce((groups, card) => {
+      const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
+      const current = groups.get(groupKey);
+      if (current) current.cardIds.push(card.id);
+      else groups.set(groupKey, { card, cardIds: [card.id] });
+      return groups;
+    }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
+      left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const mapWidth = MAP_PADDING * 2 + MAP_COLUMNS * MAP_ROOM_WIDTH + (MAP_COLUMNS - 1) * MAP_CELL_GAP;
     const mapHeight = MAP_PADDING * 2 + MAP_ROWS * MAP_ROOM_HEIGHT + (MAP_ROWS - 1) * MAP_CELL_GAP;
 
@@ -1357,18 +1365,19 @@ export default function Home() {
                     <h3>인벤토리</h3><strong>{inventoryCards.length}장</strong>
                   </div>
                   <div className="deck-editor-card-list">
-                    {inventoryCards.map((card) => (
+                    {inventoryGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
-                        className={`deck-editor-card card-face ${card.kind} ${card.damageType} ${deckEditorDrag?.cardId === card.id ? "is-dragging" : ""}`}
-                        key={card.id}
+                        className={`deck-editor-card card-face ${card.kind} ${card.damageType} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
+                        key={`${card.effect}:${card.damageType}:${card.name}`}
                         draggable
-                        onDragStart={(event) => beginDeckEditorDrag(event, card.id, "inventory")}
+                        onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "inventory")}
                         onDragEnd={finishDeckEditorDrag}
-                        onClick={() => moveInventoryCardToDeck(card.id)}
-                        aria-label={`${card.name}을 전투 덱으로 이동`}
+                        onClick={() => moveInventoryCardToDeck(cardIds.at(-1)!)}
+                        aria-label={`${card.name} ${cardIds.length}장, 한 장을 전투 덱으로 이동`}
                       >
                         <CardFace card={card} />
+                        {cardIds.length > 1 && <span className="inventory-card-count">x{cardIds.length}</span>}
                       </button>
                     ))}
                     {inventoryCards.length === 0 && (
@@ -1411,7 +1420,7 @@ export default function Home() {
                       >
                         <span className="deck-list-cost">{card.cost}</span>
                         <strong>{card.name}</strong>
-                        <span className="deck-list-count">{cardIds.length}</span>
+                        <span className="deck-list-count">x{cardIds.length}</span>
                       </button>
                     ))}
                   </div>
