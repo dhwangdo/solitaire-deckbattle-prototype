@@ -612,6 +612,38 @@ export default function Home() {
     setDeckEditorMessage(`${card.name}을(를) 인벤토리에 주웠습니다.`);
   };
 
+  const moveDeckCardToFloor = (cardId: number) => {
+    if (deckCards.length <= 1) {
+      setDeckEditorMessage("덱에는 반드시 카드가 1장 이상 있어야 합니다.");
+      return;
+    }
+    const card = deckCards.find((item) => item.id === cardId);
+    if (!card) return;
+    const roomKey = mapRoomKey(mapPosition);
+    setDeckCards((current) => current.filter((item) => item.id !== cardId));
+    setRoomDrops((current) => ({
+      ...current,
+      [roomKey]: [...(current[roomKey] ?? []), card],
+    }));
+    setDeckEditorMessage(`${card.name}을(를) 덱에서 방 바닥으로 옮겼습니다.`);
+  };
+
+  const moveFloorCardToDeck = (cardId: number) => {
+    if (deckCards.length >= STARTER_DECK_CASE.capacity) {
+      setDeckEditorMessage(`${STARTER_DECK_CASE.name}에는 최대 ${STARTER_DECK_CASE.capacity}장까지 넣을 수 있습니다.`);
+      return;
+    }
+    const roomKey = mapRoomKey(mapPosition);
+    const card = (roomDrops[roomKey] ?? []).find((item) => item.id === cardId);
+    if (!card) return;
+    setRoomDrops((current) => ({
+      ...current,
+      [roomKey]: (current[roomKey] ?? []).filter((item) => item.id !== cardId),
+    }));
+    setDeckCards((current) => [...current, card]);
+    setDeckEditorMessage(`${card.name}을(를) 방 바닥에서 덱에 넣었습니다.`);
+  };
+
   const beginDeckEditorDrag = (
     event: ReactDragEvent<HTMLElement>,
     cardId: number,
@@ -633,6 +665,8 @@ export default function Home() {
       else if (source === "inventory" && target === "deck") moveInventoryCardToDeck(cardId);
       else if (source === "inventory" && target === "floor") moveInventoryCardToFloor(cardId);
       else if (source === "floor" && target === "inventory") moveFloorCardToInventory(cardId);
+      else if (source === "deck" && target === "floor") moveDeckCardToFloor(cardId);
+      else if (source === "floor" && target === "deck") moveFloorCardToDeck(cardId);
     }
     setDeckEditorDrag(null);
     setDeckEditorDropTarget(null);
@@ -1557,7 +1591,8 @@ export default function Home() {
                 <section
                   className={`deck-editor-column deck-list-column ${deckEditorDropTarget === "deck" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
-                    if (deckEditorDrag?.source !== "inventory" || deckCards.length >= STARTER_DECK_CASE.capacity) {
+                    if ((deckEditorDrag?.source !== "inventory" && deckEditorDrag?.source !== "floor")
+                      || deckCards.length >= STARTER_DECK_CASE.capacity) {
                       event.dataTransfer.dropEffect = "none";
                       setDeckEditorDropTarget(null);
                       return;
@@ -1604,7 +1639,7 @@ export default function Home() {
                   <div
                     className={`deck-editor-floor-cards ${deckEditorDropTarget === "floor" ? "is-drop-target" : ""}`}
                     onDragOver={(event) => {
-                      if (deckEditorDrag?.source !== "inventory") return;
+                      if (deckEditorDrag?.source !== "inventory" && deckEditorDrag?.source !== "deck") return;
                       event.preventDefault();
                       event.dataTransfer.dropEffect = "move";
                       setDeckEditorDropTarget("floor");
@@ -1906,7 +1941,7 @@ export default function Home() {
                 onClick={game.status === "won" ? returnToMap : startNewRun}
                 disabled={game.status === "won" && battleRewards.length < 2}
               >
-                {game.status === "won" ? "바닥에 두고 지도로" : "새 탐험 시작"}
+                {game.status === "won" ? "다음" : "새 탐험 시작"}
               </button>
             </div>
           </div>
