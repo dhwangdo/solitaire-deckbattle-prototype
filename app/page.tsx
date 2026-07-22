@@ -348,7 +348,6 @@ export default function Home() {
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorSide } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorSide | null>(null);
-  const [deckCardPreview, setDeckCardPreview] = useState<{ card: Card; x: number; y: number } | null>(null);
   const [deckEditorMessage, setDeckEditorMessage] = useState("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
@@ -495,7 +494,6 @@ export default function Home() {
     if (!card) return;
     setDeckCards((current) => current.filter((item) => item.id !== cardId));
     setInventoryCards((current) => [...current, card]);
-    setDeckCardPreview(null);
     setDeckEditorMessage(`${card.name}을(를) 인벤토리로 옮겼습니다.`);
   };
 
@@ -534,7 +532,6 @@ export default function Home() {
   const finishDeckEditorDrag = () => {
     setDeckEditorDrag(null);
     setDeckEditorDropTarget(null);
-    setDeckCardPreview(null);
   };
 
   const closeDeckEditor = () => {
@@ -590,12 +587,6 @@ export default function Home() {
       y: pointerY - mapY * nextZoom,
     });
     setMapZoom(nextZoom);
-  };
-
-  const showDeckCardPreview = (card: Card, clientX: number, clientY: number) => {
-    const x = clientX + 130 > window.innerWidth ? clientX - 120 : clientX + 18;
-    const y = clientY + 170 > window.innerHeight ? clientY - 160 : clientY + 14;
-    setDeckCardPreview({ card, x, y });
   };
 
   useLayoutEffect(() => {
@@ -1390,9 +1381,6 @@ export default function Home() {
                         className={`deck-list-entry rarity-${card.rarity} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
                         key={card.effect}
                         draggable
-                        onPointerEnter={(event) => showDeckCardPreview(card, event.clientX, event.clientY)}
-                        onPointerMove={(event) => showDeckCardPreview(card, event.clientX, event.clientY)}
-                        onPointerLeave={() => setDeckCardPreview(null)}
                         onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
                         onDragEnd={finishDeckEditorDrag}
                         onClick={() => moveDeckCardToInventory(cardIds.at(-1)!)}
@@ -1412,15 +1400,6 @@ export default function Home() {
                 <button type="button" onClick={closeDeckEditor}>편집 완료</button>
               </footer>
             </section>
-            {deckCardPreview && !deckEditorDrag && (
-              <div
-                className={`deck-card-preview card-face ${deckCardPreview.card.kind} ${deckCardPreview.card.damageType}`}
-                style={{ left: deckCardPreview.x, top: deckCardPreview.y }}
-                aria-hidden="true"
-              >
-                <CardFace card={deckCardPreview.card} />
-              </div>
-            )}
           </div>
         )}
       </main>

@@ -375,19 +375,6 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   font: 800 12px Arial, sans-serif;
 }
 
-.deck-card-preview {
-  position: fixed;
-  z-index: 140;
-  pointer-events: none;
-  box-shadow: 0 12px 28px rgba(0,0,0,.48);
-  animation: deck-preview-in .1s ease-out;
-}
-
-@keyframes deck-preview-in {
-  from { opacity: 0; transform: translateY(3px) scale(.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
 .deck-editor-card-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, 102px);
