@@ -450,6 +450,40 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   font: 800 13px Arial, sans-serif;
 }
 
+.deck-editor-card.will-deactivate {
+  outline: 2px dashed #b76b28;
+  outline-offset: 2px;
+  animation: pending-card-deactivation 1.4s steps(1, end) infinite;
+}
+
+.deck-editor-card.will-deactivate .card-effect,
+.deck-editor-card.will-deactivate .card-effect * {
+  animation: pending-effect-deactivation 1.4s steps(1, end) infinite;
+}
+
+.pending-card-warning {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  bottom: 3px;
+  padding: 1px 3px;
+  color: #7b3f17;
+  background: rgba(255,232,187,.94);
+  font: 700 8px Arial, sans-serif;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+@keyframes pending-card-deactivation {
+  0%, 49% { filter: grayscale(0); opacity: 1; }
+  50%, 100% { filter: grayscale(1); opacity: .58; }
+}
+
+@keyframes pending-effect-deactivation {
+  0%, 49% { color: inherit; text-decoration: none; }
+  50%, 100% { color: #6f6f6c; text-decoration: line-through; }
+}
+
 .deck-editor-floor-section {
   min-height: 190px;
   padding: 10px 14px 12px;
@@ -472,7 +506,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-floor-heading span { color: #66645e; font-size: 11px; }
 .deck-editor-floor-heading small { color: #706e67; font-size: 10px; }
 
-.deck-editor-floor-layout { display: grid; grid-template-columns: 1fr 120px; gap: 12px; min-height: 148px; }
+.deck-editor-floor-layout { min-height: 148px; }
 
 .deck-editor-floor-cards {
   display: flex;
@@ -489,22 +523,6 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .deck-editor-floor-cards.is-drop-target { background: #d9e2e7; box-shadow: inset 0 0 0 3px #4f7188; }
 .floor-empty-copy { align-self: center; margin: auto; color: #77746d; font: 11px Arial, sans-serif; }
-
-.deck-editor-trash {
-  display: grid;
-  place-content: center;
-  gap: 4px;
-  border: 1px dashed #8d5b56;
-  border-radius: 3px;
-  color: #73433f;
-  background: rgba(130,55,48,.07);
-  text-align: center;
-  transition: background .12s ease, box-shadow .12s ease;
-}
-
-.deck-editor-trash strong { font-size: 13px; }
-.deck-editor-trash span { font: 9px Arial, sans-serif; }
-.deck-editor-trash.is-drop-target { background: rgba(153,57,48,.2); box-shadow: inset 0 0 0 3px #914d47; }
 
 .deck-editor-empty {
   grid-column: 1 / -1;
