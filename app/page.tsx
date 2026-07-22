@@ -1612,8 +1612,11 @@ export default function Home() {
                         draggable
                         onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
                         onDragEnd={finishDeckEditorDrag}
-                        onClick={() => moveDeckCardToInventory(cardIds.at(-1)!)}
-                        aria-label={`${card.name} ${cardIds.length}장, 한 장을 인벤토리로 이동`}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          moveDeckCardToInventory(cardIds.at(-1)!);
+                        }}
+                        aria-label={`${card.name} ${cardIds.length}장, 우클릭하면 한 장을 인벤토리로 이동`}
                       >
                         <span className="deck-list-cost">{card.cost}</span>
                         <strong>{card.name}</strong>
