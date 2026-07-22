@@ -8,6 +8,7 @@ import {
   type CSSProperties,
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 
 type CardKind = "strike" | "defend" | "skill";
@@ -113,6 +114,9 @@ const MAP_ROOM_WIDTH = 204;
 const MAP_ROOM_HEIGHT = 136;
 const MAP_CELL_GAP = 20;
 const MAP_PADDING = 42;
+const MAP_MIN_ZOOM = 0.45;
+const MAP_MAX_ZOOM = 1.35;
+const MAP_ZOOM_STEP = 0.1;
 const MAP_START: MapPosition = { x: Math.floor(MAP_COLUMNS / 2), y: 0 };
 const CARD_HEIGHT = 144;
 const PILE_HEIGHT = 226;
@@ -338,11 +342,13 @@ export default function Home() {
   const [clearedCombats, setClearedCombats] = useState<Set<string>>(() => new Set());
   const [activeBattleRoom, setActiveBattleRoom] = useState<string | null>(null);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const [mapZoom, setMapZoom] = useState(1);
   const [deckCards, setDeckCards] = useState<Card[]>(createDeck);
   const [inventoryCards, setInventoryCards] = useState<Card[]>([]);
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorSide } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorSide | null>(null);
+  const [deckCardPreview, setDeckCardPreview] = useState<{ card: Card; x: number; y: number } | null>(null);
   const [deckEditorMessage, setDeckEditorMessage] = useState("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
@@ -429,8 +435,8 @@ export default function Home() {
     const roomCenterX = MAP_PADDING + position.x * (MAP_ROOM_WIDTH + MAP_CELL_GAP) + MAP_ROOM_WIDTH / 2;
     const roomCenterY = MAP_PADDING + position.y * (MAP_ROOM_HEIGHT + MAP_CELL_GAP) + MAP_ROOM_HEIGHT / 2;
     setMapPan({
-      x: viewport.clientWidth / 2 - roomCenterX,
-      y: viewport.clientHeight / 2 - roomCenterY,
+      x: viewport.clientWidth / 2 - roomCenterX * mapZoom,
+      y: viewport.clientHeight / 2 - roomCenterY * mapZoom,
     });
   };
 
@@ -489,6 +495,7 @@ export default function Home() {
     if (!card) return;
     setDeckCards((current) => current.filter((item) => item.id !== cardId));
     setInventoryCards((current) => [...current, card]);
+    setDeckCardPreview(null);
     setDeckEditorMessage(`${card.name}을(를) 인벤토리로 옮겼습니다.`);
   };
 
@@ -527,6 +534,7 @@ export default function Home() {
   const finishDeckEditorDrag = () => {
     setDeckEditorDrag(null);
     setDeckEditorDropTarget(null);
+    setDeckCardPreview(null);
   };
 
   const closeDeckEditor = () => {
@@ -559,6 +567,35 @@ export default function Home() {
 
   const finishMapDrag = () => {
     mapDragRef.current = null;
+  };
+
+  const zoomMap = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const viewport = mapViewportRef.current;
+    if (!viewport) return;
+    const direction = event.deltaY < 0 ? 1 : -1;
+    const nextZoom = Math.min(
+      MAP_MAX_ZOOM,
+      Math.max(MAP_MIN_ZOOM, Number((mapZoom + direction * MAP_ZOOM_STEP).toFixed(2))),
+    );
+    if (nextZoom === mapZoom) return;
+
+    const bounds = viewport.getBoundingClientRect();
+    const pointerX = event.clientX - bounds.left;
+    const pointerY = event.clientY - bounds.top;
+    const mapX = (pointerX - mapPan.x) / mapZoom;
+    const mapY = (pointerY - mapPan.y) / mapZoom;
+    setMapPan({
+      x: pointerX - mapX * nextZoom,
+      y: pointerY - mapY * nextZoom,
+    });
+    setMapZoom(nextZoom);
+  };
+
+  const showDeckCardPreview = (card: Card, clientX: number, clientY: number) => {
+    const x = clientX + 130 > window.innerWidth ? clientX - 120 : clientX + 18;
+    const y = clientY + 170 > window.innerHeight ? clientY - 160 : clientY + 14;
+    setDeckCardPreview({ card, x, y });
   };
 
   useLayoutEffect(() => {
@@ -1202,7 +1239,10 @@ export default function Home() {
               <span><i className="legend-unknown" />미방문</span>
             </div>
             <div className="map-toolbar-actions">
-              <span className="map-help">인접한 방을 클릭해 이동 · 지도를 드래그해 탐색</span>
+              <span className="map-help">인접한 방을 클릭해 이동 · 드래그로 탐색 · 휠로 확대/축소</span>
+              <span className="map-zoom-value" aria-label={`지도 배율 ${Math.round(mapZoom * 100)}퍼센트`}>
+                {Math.round(mapZoom * 100)}%
+              </span>
               <button type="button" className="recenter-map" onClick={() => centerMapOn(mapPosition)}>
                 현재 위치로
               </button>
@@ -1217,6 +1257,7 @@ export default function Home() {
             onPointerUp={finishMapDrag}
             onPointerCancel={finishMapDrag}
             onPointerLeave={finishMapDrag}
+            onWheel={zoomMap}
           >
             <div
               className="map-canvas"
@@ -1227,7 +1268,8 @@ export default function Home() {
                 gap: MAP_CELL_GAP,
                 gridTemplateColumns: `repeat(${MAP_COLUMNS}, ${MAP_ROOM_WIDTH}px)`,
                 gridAutoRows: `${MAP_ROOM_HEIGHT}px`,
-                transform: `translate3d(${mapPan.x}px, ${mapPan.y}px, 0)`,
+                transform: `translate3d(${mapPan.x}px, ${mapPan.y}px, 0) scale(${mapZoom})`,
+                transformOrigin: "0 0",
               }}
             >
               {Array.from({ length: MAP_COLUMNS * MAP_ROWS }, (_, index) => {
@@ -1297,38 +1339,6 @@ export default function Home() {
 
               <div className="deck-editor-columns">
                 <section
-                  className={`deck-editor-column deck-list-column ${deckEditorDropTarget === "deck" ? "is-drop-target" : ""}`}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                    setDeckEditorDropTarget("deck");
-                  }}
-                  onDrop={(event) => dropDeckEditorCard(event, "deck")}
-                >
-                  <div className="deck-editor-column-title">
-                    <h3>덱</h3><strong>{deckCards.length}장</strong>
-                  </div>
-                  <div className="deck-editor-deck-list">
-                    {deckGroups.map(({ card, cardIds }) => (
-                      <button
-                        type="button"
-                        className={`deck-list-entry rarity-${card.rarity} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
-                        key={card.effect}
-                        draggable
-                        onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
-                        onDragEnd={finishDeckEditorDrag}
-                        onClick={() => moveDeckCardToInventory(cardIds.at(-1)!)}
-                        aria-label={`${card.name} ${cardIds.length}장, 한 장을 인벤토리로 이동`}
-                      >
-                        <span className="deck-list-cost">{card.cost}</span>
-                        <strong>{card.name}</strong>
-                        <span className="deck-list-count">{cardIds.length}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section
                   className={`deck-editor-column inventory-column ${deckEditorDropTarget === "inventory" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
                     event.preventDefault();
@@ -1360,6 +1370,41 @@ export default function Home() {
                     )}
                   </div>
                 </section>
+
+                <section
+                  className={`deck-editor-column deck-list-column ${deckEditorDropTarget === "deck" ? "is-drop-target" : ""}`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDeckEditorDropTarget("deck");
+                  }}
+                  onDrop={(event) => dropDeckEditorCard(event, "deck")}
+                >
+                  <div className="deck-editor-column-title">
+                    <h3>덱</h3><strong>{deckCards.length}장</strong>
+                  </div>
+                  <div className="deck-editor-deck-list">
+                    {deckGroups.map(({ card, cardIds }) => (
+                      <button
+                        type="button"
+                        className={`deck-list-entry rarity-${card.rarity} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
+                        key={card.effect}
+                        draggable
+                        onPointerEnter={(event) => showDeckCardPreview(card, event.clientX, event.clientY)}
+                        onPointerMove={(event) => showDeckCardPreview(card, event.clientX, event.clientY)}
+                        onPointerLeave={() => setDeckCardPreview(null)}
+                        onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
+                        onDragEnd={finishDeckEditorDrag}
+                        onClick={() => moveDeckCardToInventory(cardIds.at(-1)!)}
+                        aria-label={`${card.name} ${cardIds.length}장, 한 장을 인벤토리로 이동`}
+                      >
+                        <span className="deck-list-cost">{card.cost}</span>
+                        <strong>{card.name}</strong>
+                        <span className="deck-list-count">{cardIds.length}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
               </div>
 
               <footer className="deck-editor-footer">
@@ -1367,6 +1412,15 @@ export default function Home() {
                 <button type="button" onClick={closeDeckEditor}>편집 완료</button>
               </footer>
             </section>
+            {deckCardPreview && !deckEditorDrag && (
+              <div
+                className={`deck-card-preview card-face ${deckCardPreview.card.kind} ${deckCardPreview.card.damageType}`}
+                style={{ left: deckCardPreview.x, top: deckCardPreview.y }}
+                aria-hidden="true"
+              >
+                <CardFace card={deckCardPreview.card} />
+              </div>
+            )}
           </div>
         )}
       </main>

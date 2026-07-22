@@ -115,6 +115,13 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .map-toolbar-actions { display: flex; align-items: center; gap: 10px; }
 .map-help { color: rgba(255,255,255,.68); white-space: nowrap; }
+.map-zoom-value {
+  flex: none;
+  min-width: 38px;
+  color: rgba(255,255,255,.92);
+  font-weight: 700;
+  text-align: center;
+}
 
 .recenter-map {
   flex: none;
@@ -277,7 +284,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .deck-editor-columns {
   display: grid;
-  grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr);
+  grid-template-columns: minmax(0, 1.28fr) minmax(280px, .72fr);
   min-height: 0;
 }
 
@@ -366,6 +373,19 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   border-radius: 50%;
   background: rgba(255,255,255,.72);
   font: 800 12px Arial, sans-serif;
+}
+
+.deck-card-preview {
+  position: fixed;
+  z-index: 140;
+  pointer-events: none;
+  box-shadow: 0 12px 28px rgba(0,0,0,.48);
+  animation: deck-preview-in .1s ease-out;
+}
+
+@keyframes deck-preview-in {
+  from { opacity: 0; transform: translateY(3px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .deck-editor-card-list {
