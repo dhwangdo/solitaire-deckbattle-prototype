@@ -36,6 +36,7 @@ type Screen = "map" | "battle";
 type MapPosition = { x: number; y: number };
 type RoomType = "empty" | "combat";
 type DeckEditorArea = "deck" | "inventory" | "floor" | "trash";
+type DeckSortMode = "cost" | "rarity";
 type DeckCase = { id: string; name: string; capacity: number; cards: Card[] };
 type PendingRemovedCard = { card: Card; deckId: string };
 
@@ -486,7 +487,9 @@ export default function Home() {
   const [battleRewardGold, setBattleRewardGold] = useState(0);
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorArea } | null>(null);
+  const deckEditorDragRef = useRef<{ cardId: number; source: DeckEditorArea } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
+  const [deckSortMode, setDeckSortMode] = useState<DeckSortMode>("cost");
   const [deckEditorMessage, setDeckEditorMessage] = useState("바닥 카드는 좌클릭으로 인벤토리와 덱으로 옮길 수 있습니다. 원래 덱 카드는 휴지통에서만 제거합니다.");
   const [deckEditorSnapshot, setDeckEditorSnapshot] = useState<DeckEditorSnapshot | null>(null);
   const [pendingRemovedCards, setPendingRemovedCards] = useState<PendingRemovedCard[]>([]);
@@ -867,6 +870,7 @@ export default function Home() {
   ) => {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", `${source}:${cardId}`);
+    deckEditorDragRef.current = { cardId, source };
     setDeckEditorDrag({ cardId, source });
     setDeckEditorDropTarget(null);
   };
@@ -874,8 +878,8 @@ export default function Home() {
   const dropDeckEditorCard = (event: ReactDragEvent<HTMLElement>, target: DeckEditorArea) => {
     event.preventDefault();
     const [payloadSource, payloadId] = event.dataTransfer.getData("text/plain").split(":");
-    const source = deckEditorDrag?.source ?? (payloadSource as DeckEditorArea);
-    const cardId = deckEditorDrag?.cardId ?? Number(payloadId);
+    const source = deckEditorDragRef.current?.source ?? deckEditorDrag?.source ?? (payloadSource as DeckEditorArea);
+    const cardId = deckEditorDragRef.current?.cardId ?? deckEditorDrag?.cardId ?? Number(payloadId);
     if (source !== target && Number.isInteger(cardId)) {
       if (source === "inventory" && target === "deck") moveInventoryCardToDeck(cardId);
       else if (source === "inventory" && target === "floor") moveInventoryCardToFloor(cardId);
@@ -886,11 +890,13 @@ export default function Home() {
       else if (source === "deck" && target === "trash") moveDeckCardToTrash(cardId);
       else if (source === "trash" && target === "deck") restoreRemovedCard(cardId);
     }
+    deckEditorDragRef.current = null;
     setDeckEditorDrag(null);
     setDeckEditorDropTarget(null);
   };
 
   const finishDeckEditorDrag = () => {
+    deckEditorDragRef.current = null;
     setDeckEditorDrag(null);
     setDeckEditorDropTarget(null);
   };
@@ -1586,6 +1592,7 @@ export default function Home() {
     const exploredCount = visitedRooms.size;
     const currentRoomKey = mapRoomKey(mapPosition);
     const canEditDeck = getRoomType(mapPosition, mapSeed) === "empty" || clearedCombats.has(currentRoomKey);
+    const rarityOrder: Record<CardRarity, number> = { rare: 0, special: 1, basic: 2 };
     const deckGroups = Array.from(deckCards.reduce((groups, card) => {
       const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
       const current = groups.get(groupKey);
@@ -1593,7 +1600,13 @@ export default function Home() {
       else groups.set(groupKey, { card, cardIds: [card.id] });
       return groups;
     }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
-      left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
+      deckSortMode === "cost"
+        ? left.card.cost - right.card.cost
+          || rarityOrder[left.card.rarity] - rarityOrder[right.card.rarity]
+          || left.card.name.localeCompare(right.card.name, "ko")
+        : rarityOrder[left.card.rarity] - rarityOrder[right.card.rarity]
+          || left.card.cost - right.card.cost
+          || left.card.name.localeCompare(right.card.name, "ko"));
     const inventoryGroups = Array.from(inventoryCards.reduce((groups, card) => {
       const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
       const current = groups.get(groupKey);
@@ -1604,6 +1617,7 @@ export default function Home() {
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const currentFloorCards = roomDrops[currentRoomKey] ?? [];
     const currentFloorDecks = roomDeckDrops[currentRoomKey] ?? [];
+    const latestPendingRemovedCard = pendingRemovedCards.at(-1)?.card ?? null;
     const safeRoomRoutes = buildSafeRoomRoutes(mapPosition, visitedRooms, clearedCombats, mapSeed);
     const floorGroups = Array.from(currentFloorCards.reduce((groups, card) => {
       const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
@@ -1768,7 +1782,8 @@ export default function Home() {
 
         {deckEditorOpen && (
           <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title">
-            <section className="deck-editor-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="deck-editor-stage">
+              <section className="deck-editor-panel" onClick={(event) => event.stopPropagation()}>
               <header className="deck-editor-header">
                 <div>
                   <p>LOADOUT</p>
@@ -1790,10 +1805,11 @@ export default function Home() {
                 <section
                   className={`deck-editor-column inventory-column ${deckEditorDropTarget === "inventory" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
-                    const source = deckEditorDrag?.source;
+                    const drag = deckEditorDragRef.current ?? deckEditorDrag;
+                    const source = drag?.source;
                     const temporaryDeckCard = source === "deck"
-                      && deckEditorDrag
-                      && !originalDeckIdForCard(deckEditorDrag.cardId);
+                      && drag
+                      && !originalDeckIdForCard(drag.cardId);
                     if (source !== "floor" && !temporaryDeckCard) return;
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
@@ -1836,7 +1852,7 @@ export default function Home() {
                 <section
                   className={`deck-editor-column deck-list-column ${deckEditorDropTarget === "deck" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
-                    const source = deckEditorDrag?.source;
+                    const source = (deckEditorDragRef.current ?? deckEditorDrag)?.source;
                     const restoringTrash = source === "trash";
                     const addingCard = source === "inventory" || source === "floor";
                     if (!restoringTrash && (!addingCard || !activeDeck || deckCards.length >= activeDeck.capacity)) {
@@ -1911,59 +1927,70 @@ export default function Home() {
                         </button>
                       ))}
                     </div>
-                    <aside className="deck-card-preview" aria-live="polite">
-                      <strong>카드 미리보기</strong>
-                      {hoveredDeckCard ? (
-                        <div className={`card-face ${hoveredDeckCard.kind} ${hoveredDeckCard.damageType}`}>
-                          <CardFace card={hoveredDeckCard} />
-                        </div>
-                      ) : (
-                        <span>덱 카드에 마우스를 올리세요.</span>
-                      )}
+                    <aside className="deck-tools-column">
+                      <div className="deck-sort-controls" aria-label="덱 정렬">
+                        <button
+                          type="button"
+                          className={deckSortMode === "cost" ? "is-active" : ""}
+                          onClick={() => setDeckSortMode("cost")}
+                        >
+                          비용순
+                        </button>
+                        <button
+                          type="button"
+                          className={deckSortMode === "rarity" ? "is-active" : ""}
+                          onClick={() => setDeckSortMode("rarity")}
+                        >
+                          희귀도순
+                        </button>
+                      </div>
                       <div
                         className={`trash-slot ${deckEditorDropTarget === "trash" ? "is-drop-target" : ""} ${pendingRemovedCards.length > 0 ? "has-cards" : ""}`}
                         onDragOver={(event) => {
+                          event.stopPropagation();
+                          const drag = deckEditorDragRef.current ?? deckEditorDrag;
                           if (
-                            deckEditorDrag?.source !== "deck"
-                            || !originalDeckIdForCard(deckEditorDrag.cardId)
+                            drag?.source !== "deck"
+                            || !originalDeckIdForCard(drag.cardId)
                           ) return;
                           event.preventDefault();
                           event.dataTransfer.dropEffect = "move";
                           setDeckEditorDropTarget("trash");
                         }}
-                        onDrop={(event) => dropDeckEditorCard(event, "trash")}
+                        onDrop={(event) => {
+                          event.stopPropagation();
+                          dropDeckEditorCard(event, "trash");
+                        }}
                       >
-                        <strong>휴지통</strong>
-                        <span className="trash-icon" aria-hidden="true" />
-                        {pendingRemovedCards.length === 0 ? (
-                          <small>원래 덱 카드를 이곳에 드래그</small>
-                        ) : (
+                        {latestPendingRemovedCard ? (
                           <>
+                            <button
+                              type="button"
+                              className={`trash-card card-face ${latestPendingRemovedCard.kind} ${latestPendingRemovedCard.damageType}`}
+                              draggable
+                              onDragStart={(event) => beginDeckEditorDrag(event, latestPendingRemovedCard.id, "trash")}
+                              onDragEnd={finishDeckEditorDrag}
+                              onClick={() => restoreRemovedCard(latestPendingRemovedCard.id)}
+                              aria-label={`${latestPendingRemovedCard.name}, 가장 최근 제거 예정 카드. 누르거나 덱으로 드래그하면 복구`}
+                            >
+                              <CardFace card={latestPendingRemovedCard} />
+                            </button>
                             <small className="trash-warning">
-                              편집 확인 시 {pendingRemovedCards.length}장 영구 제거
+                              총 {pendingRemovedCards.length}장의 카드가 버려집니다
                             </small>
-                            <div className="trash-card-list">
-                              {pendingRemovedCards.map(({ card }) => (
-                                <button
-                                  type="button"
-                                  key={`trash-${card.id}`}
-                                  draggable
-                                  onDragStart={(event) => beginDeckEditorDrag(event, card.id, "trash")}
-                                  onDragEnd={finishDeckEditorDrag}
-                                  onClick={() => restoreRemovedCard(card.id)}
-                                  aria-label={`${card.name}, 제거 예정. 누르거나 덱으로 드래그하면 복구`}
-                                >
-                                  <span>{card.cost}</span>
-                                  <strong>{card.name}</strong>
-                                </button>
-                              ))}
-                            </div>
                           </>
+                        ) : (
+                          <span className="trash-icon" aria-label="휴지통" />
                         )}
                       </div>
                     </aside>
+                    <span className="area-flow-arrow deck-to-trash" aria-hidden="true" />
                   </div>
                 </section>
+                <div className="area-flow-arrow inventory-deck-flow" aria-hidden="true">
+                  <span />
+                  <span />
+                </div>
               </div>
 
               <section className="deck-editor-floor-section">
@@ -1975,10 +2002,11 @@ export default function Home() {
                   <div
                     className={`deck-editor-floor-cards ${deckEditorDropTarget === "floor" ? "is-drop-target" : ""}`}
                     onDragOver={(event) => {
-                      const source = deckEditorDrag?.source;
+                      const drag = deckEditorDragRef.current ?? deckEditorDrag;
+                      const source = drag?.source;
                       const temporaryDeckCard = source === "deck"
-                        && deckEditorDrag
-                        && !originalDeckIdForCard(deckEditorDrag.cardId);
+                        && drag
+                        && !originalDeckIdForCard(drag.cardId);
                       if (source !== "inventory" && !temporaryDeckCard) return;
                       event.preventDefault();
                       event.dataTransfer.dropEffect = "move";
@@ -2025,7 +2053,15 @@ export default function Home() {
               <footer className="deck-editor-footer">
                 <span role="status" aria-live="polite">{deckEditorMessage}</span>
               </footer>
-            </section>
+              </section>
+              {hoveredDeckCard && (
+                <aside className="deck-card-preview-floating" aria-live="polite">
+                  <div className={`card-face ${hoveredDeckCard.kind} ${hoveredDeckCard.damageType}`}>
+                    <CardFace card={hoveredDeckCard} />
+                  </div>
+                </aside>
+              )}
+            </div>
           </div>
         )}
       </main>
