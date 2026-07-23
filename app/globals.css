@@ -186,6 +186,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   will-change: transform;
 }
 
+.map-canvas.is-traveling { transition: transform .3s ease; }
+
 .map-room {
   position: relative;
   display: grid;
@@ -211,8 +213,10 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .map-room.is-combat { border-color: #393b3b; color: white; background: #5d6060; }
 .map-room.is-cleared { border-color: #5b5f5e; color: white; background: #909493; }
-.map-room.is-adjacent { cursor: pointer; box-shadow: 0 0 0 3px #d8d8d2, 0 4px 12px rgba(0,0,0,.42); }
-.map-room.is-adjacent:hover { transform: translateY(-2px); filter: brightness(1.12); }
+.map-room.is-adjacent,
+.map-room.is-reachable { cursor: pointer; box-shadow: 0 0 0 3px #d8d8d2, 0 4px 12px rgba(0,0,0,.42); }
+.map-room.is-adjacent:hover,
+.map-room.is-reachable:hover { transform: translateY(-2px); filter: brightness(1.12); }
 .map-room:focus-visible { outline: 3px solid white; outline-offset: 2px; }
 .map-room.is-current { z-index: 2; border-color: #4c493b; background: #c9c4a9; box-shadow: 0 0 0 4px #eeebdc, 0 0 22px rgba(238,235,220,.42); }
 
@@ -257,6 +261,14 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   color: #2b281f;
   background: #f7edbd;
   font: 800 15px Georgia, serif;
+}
+
+.map-player-marker {
+  position: absolute;
+  z-index: 12;
+  transform: translate(-50%, -50%);
+  transition: left .3s ease, top .3s ease;
+  pointer-events: none;
 }
 
 .map-depth-fade {

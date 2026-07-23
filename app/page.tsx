@@ -156,6 +156,51 @@ function getRoomType(position: MapPosition, seed: number): RoomType {
   return roll < 0.35 ? "combat" : "empty";
 }
 
+const MAP_DIRECTIONS = [
+  { x: 1, y: 0 },
+  { x: -1, y: 0 },
+  { x: 0, y: 1 },
+  { x: 0, y: -1 },
+];
+
+function buildSafeRoomRoutes(
+  start: MapPosition,
+  visitedRooms: Set<string>,
+  clearedCombats: Set<string>,
+  seed: number,
+) {
+  const startKey = mapRoomKey(start);
+  const previous = new Map<string, string | null>([[startKey, null]]);
+  const queue = [start];
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index];
+    for (const direction of MAP_DIRECTIONS) {
+      const next = { x: current.x + direction.x, y: current.y + direction.y };
+      if (next.x < 0 || next.x >= MAP_COLUMNS || next.y < 0 || next.y >= MAP_ROWS) continue;
+      const nextKey = mapRoomKey(next);
+      if (previous.has(nextKey) || !visitedRooms.has(nextKey)) continue;
+      const safe = getRoomType(next, seed) === "empty" || clearedCombats.has(nextKey);
+      if (!safe) continue;
+      previous.set(nextKey, mapRoomKey(current));
+      queue.push(next);
+    }
+  }
+  return previous;
+}
+
+function routeToRoom(target: MapPosition, routes: Map<string, string | null>) {
+  const targetKey = mapRoomKey(target);
+  if (!routes.has(targetKey)) return null;
+  const reversed: MapPosition[] = [];
+  let cursor: string | null = targetKey;
+  while (cursor) {
+    const [x, y] = cursor.split(":").map(Number);
+    reversed.push({ x, y });
+    cursor = routes.get(cursor) ?? null;
+  }
+  return reversed.reverse();
+}
+
 const ATTACK_LABEL: Record<DamageType, string> = {
   physical: "공격",
   magic: "마법 공격",
@@ -429,6 +474,7 @@ export default function Home() {
   const [activeBattleRoom, setActiveBattleRoom] = useState<string | null>(null);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
   const [mapZoom, setMapZoom] = useState(1);
+  const [mapTraveling, setMapTraveling] = useState(false);
   const [ownedDecks, setOwnedDecks] = useState<DeckCase[]>(() => [createStarterDeck()]);
   const [activeDeckId, setActiveDeckId] = useState("starter");
   const [inventoryCards, setInventoryCards] = useState<Card[]>([]);
@@ -465,6 +511,7 @@ export default function Home() {
   const dragRef = useRef<DragState & { startX: number; startY: number } | null>(null);
   const timersRef = useRef<number[]>([]);
   const mapViewportRef = useRef<HTMLDivElement | null>(null);
+  const mapTravelTimerRef = useRef<number | null>(null);
   const mapDragRef = useRef<{
     startX: number;
     startY: number;
@@ -514,8 +561,17 @@ export default function Home() {
     timersRef.current = [];
   };
 
+  const clearMapTravel = () => {
+    if (mapTravelTimerRef.current !== null) {
+      window.clearTimeout(mapTravelTimerRef.current);
+      mapTravelTimerRef.current = null;
+    }
+    setMapTraveling(false);
+  };
+
   const startBattle = (playerHp = runPlayerHp) => {
     clearBattleTimers();
+    clearMapTravel();
     setDeckEditorOpen(false);
     setDragging(null);
     setLockedEnemyId(null);
@@ -533,6 +589,7 @@ export default function Home() {
   useEffect(() => {
     return () => {
       clearBattleTimers();
+      if (mapTravelTimerRef.current !== null) window.clearTimeout(mapTravelTimerRef.current);
     };
   }, []);
 
@@ -548,7 +605,7 @@ export default function Home() {
   };
 
   const moveOnMap = (deltaX: number, deltaY: number) => {
-    if (screen !== "map") return;
+    if (screen !== "map" || mapTraveling) return;
     const nextPosition = {
       x: mapPosition.x + deltaX,
       y: mapPosition.y + deltaY,
@@ -568,6 +625,26 @@ export default function Home() {
       setActiveBattleRoom(roomKey);
       startBattle(runPlayerHp);
     }
+  };
+
+  const travelSafePath = (path: MapPosition[]) => {
+    if (screen !== "map" || mapTraveling || path.length < 2) return;
+    setMapTraveling(true);
+    let stepIndex = 1;
+    const advance = () => {
+      const nextPosition = path[stepIndex];
+      setMapPosition(nextPosition);
+      stepIndex += 1;
+      if (stepIndex < path.length) {
+        mapTravelTimerRef.current = window.setTimeout(advance, 300);
+      } else {
+        mapTravelTimerRef.current = window.setTimeout(() => {
+          mapTravelTimerRef.current = null;
+          setMapTraveling(false);
+        }, 300);
+      }
+    };
+    advance();
   };
 
   const returnToMap = () => {
@@ -596,6 +673,7 @@ export default function Home() {
 
   const startNewRun = () => {
     clearBattleTimers();
+    clearMapTravel();
     const nextSeed = mapSeed + 1;
     const starterDeck = createStarterDeck();
     setRunPlayerHp(MAX_PLAYER_HP);
@@ -806,7 +884,7 @@ export default function Home() {
   };
 
   const beginMapDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || mapTraveling) return;
     mapWasDraggedRef.current = false;
     mapDragRef.current = {
       startX: event.clientX,
@@ -834,6 +912,7 @@ export default function Home() {
 
   const zoomMap = (event: ReactWheelEvent<HTMLDivElement>) => {
     event.preventDefault();
+    if (mapTraveling) return;
     const viewport = mapViewportRef.current;
     if (!viewport) return;
     const direction = event.deltaY < 0 ? 1 : -1;
@@ -1463,6 +1542,7 @@ export default function Home() {
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const currentFloorCards = roomDrops[currentRoomKey] ?? [];
     const currentFloorDecks = roomDeckDrops[currentRoomKey] ?? [];
+    const safeRoomRoutes = buildSafeRoomRoutes(mapPosition, visitedRooms, clearedCombats, mapSeed);
     const floorGroups = Array.from(currentFloorCards.reduce((groups, card) => {
       const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
       const current = groups.get(groupKey);
@@ -1535,7 +1615,7 @@ export default function Home() {
             onWheel={zoomMap}
           >
             <div
-              className="map-canvas"
+              className={`map-canvas ${mapTraveling ? "is-traveling" : ""}`}
               style={{
                 width: mapWidth,
                 height: mapHeight,
@@ -1556,6 +1636,7 @@ export default function Home() {
                 const current = position.x === mapPosition.x && position.y === mapPosition.y;
                 const distance = Math.abs(position.x - mapPosition.x) + Math.abs(position.y - mapPosition.y);
                 const adjacent = distance === 1;
+                const reachable = !current && safeRoomRoutes.has(roomKey);
                 const hasItems = (roomDrops[roomKey]?.length ?? 0) > 0
                   || (roomDeckDrops[roomKey]?.length ?? 0) > 0;
                 const roomState = !visited
@@ -1573,29 +1654,40 @@ export default function Home() {
                 return (
                   <button
                     type="button"
-                    className={`map-room is-${roomState} ${current ? "is-current" : ""} ${adjacent ? "is-adjacent" : ""}`}
+                    className={`map-room is-${roomState} ${current ? "is-current" : ""} ${adjacent ? "is-adjacent" : ""} ${reachable ? "is-reachable" : ""}`}
                     key={roomKey}
-                    tabIndex={adjacent ? 0 : -1}
-                    aria-disabled={!adjacent}
+                    tabIndex={adjacent || reachable ? 0 : -1}
+                    aria-disabled={mapTraveling || (!adjacent && !reachable)}
                     aria-label={`${roomLabel}, 좌표 ${position.x + 1}, 깊이 ${position.y}`}
                     onClick={() => {
                       if (mapWasDraggedRef.current) {
                         mapWasDraggedRef.current = false;
                         return;
                       }
-                      if (!adjacent) return;
-                      moveOnMap(position.x - mapPosition.x, position.y - mapPosition.y);
+                      if (mapTraveling) return;
+                      const safePath = routeToRoom(position, safeRoomRoutes);
+                      if (safePath && safePath.length > 1) {
+                        travelSafePath(safePath);
+                        return;
+                      }
+                      if (adjacent) moveOnMap(position.x - mapPosition.x, position.y - mapPosition.y);
                     }}
                   >
-                    {current
-                      ? <span className="map-player">P</span>
-                      : visited && roomType === "combat" && !cleared
+                    {!current && visited && roomType === "combat" && !cleared
                         ? <span>전투</span>
                         : null}
                     {hasItems && <span className="room-item-indicator" aria-label="아이템 있음" />}
                   </button>
                 );
               })}
+              <span
+                className="map-player map-player-marker"
+                style={{
+                  left: MAP_PADDING + mapPosition.x * (MAP_ROOM_WIDTH + MAP_CELL_GAP) + MAP_ROOM_WIDTH / 2,
+                  top: MAP_PADDING + mapPosition.y * (MAP_ROOM_HEIGHT + MAP_CELL_GAP) + MAP_ROOM_HEIGHT / 2,
+                }}
+                aria-hidden="true"
+              >P</span>
             </div>
             <div className="map-depth-fade" aria-hidden="true" />
           </div>
