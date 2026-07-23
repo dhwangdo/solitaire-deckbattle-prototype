@@ -388,6 +388,8 @@ export default function Home() {
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
   const [deckEditorMessage, setDeckEditorMessage] = useState("인벤토리 카드는 덱에 넣을 수 있고, 덱 카드는 우클릭으로 제거합니다.");
   const [deckEditorSnapshot, setDeckEditorSnapshot] = useState<DeckEditorSnapshot | null>(null);
+  const [pendingRemovedCards, setPendingRemovedCards] = useState<Card[]>([]);
+  const [hoveredDeckCard, setHoveredDeckCard] = useState<Card | null>(null);
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
   const [dragging, setDragging] = useState<DragState | null>(null);
@@ -533,6 +535,8 @@ export default function Home() {
     setBattleRewards([]);
     setDeckEditorOpen(false);
     setDeckEditorSnapshot(null);
+    setPendingRemovedCards([]);
+    setHoveredDeckCard(null);
     setGame(waitingState());
     setPhase("drawing");
     setScreen("map");
@@ -546,7 +550,21 @@ export default function Home() {
     const card = deckCards.find((item) => item.id === cardId);
     if (!card) return;
     setDeckCards((current) => current.filter((item) => item.id !== cardId));
+    setPendingRemovedCards((current) => [...current, card]);
+    setHoveredDeckCard(null);
     setDeckEditorMessage(`${card.name}을(를) 덱에서 제거했습니다. 편집 확인 시 영구 제거됩니다.`);
+  };
+
+  const restoreRemovedCard = (cardId: number) => {
+    if (deckCards.length >= STARTER_DECK_CASE.capacity) {
+      setDeckEditorMessage(`${STARTER_DECK_CASE.name}에는 최대 ${STARTER_DECK_CASE.capacity}장까지 넣을 수 있습니다.`);
+      return;
+    }
+    const card = pendingRemovedCards.find((item) => item.id === cardId);
+    if (!card) return;
+    setPendingRemovedCards((current) => current.filter((item) => item.id !== cardId));
+    setDeckCards((current) => [...current, card]);
+    setDeckEditorMessage(`${card.name} 제거를 취소하고 덱으로 돌렸습니다.`);
   };
 
   const moveInventoryCardToDeck = (cardId: number) => {
@@ -618,6 +636,8 @@ export default function Home() {
   const openDeckEditor = (message: string) => {
     const roomKey = mapRoomKey(mapPosition);
     finishDeckEditorDrag();
+    setPendingRemovedCards([]);
+    setHoveredDeckCard(null);
     setDeckEditorSnapshot({
       roomKey,
       deck: [...deckCards],
@@ -634,6 +654,8 @@ export default function Home() {
       return;
     }
     setDeckEditorSnapshot(null);
+    setPendingRemovedCards([]);
+    setHoveredDeckCard(null);
     finishDeckEditorDrag();
     setDeckEditorOpen(false);
   };
@@ -648,6 +670,8 @@ export default function Home() {
       }));
     }
     setDeckEditorSnapshot(null);
+    setPendingRemovedCards([]);
+    setHoveredDeckCard(null);
     finishDeckEditorDrag();
     setDeckEditorOpen(false);
   };
@@ -1530,23 +1554,39 @@ export default function Home() {
                       {deckCards.length} / {STARTER_DECK_CASE.capacity}
                     </strong>
                   </div>
-                  <div className="deck-editor-deck-list">
-                    {deckGroups.map(({ card, cardIds }) => (
-                      <button
-                        type="button"
-                        className={`deck-list-entry rarity-${card.rarity}`}
-                        key={`${card.effect}:${card.damageType}:${card.name}`}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          removeDeckCard(cardIds.at(-1)!);
-                        }}
-                        aria-label={`${card.name} ${cardIds.length}장, 우클릭하면 한 장을 영구 제거`}
-                      >
-                        <span className="deck-list-cost">{card.cost}</span>
-                        <strong>{card.name}</strong>
-                        <span className="deck-list-count">x{cardIds.length}</span>
-                      </button>
-                    ))}
+                  <div className="deck-editor-deck-body">
+                    <div className="deck-editor-deck-list">
+                      {deckGroups.map(({ card, cardIds }) => (
+                        <button
+                          type="button"
+                          className={`deck-list-entry rarity-${card.rarity}`}
+                          key={`${card.effect}:${card.damageType}:${card.name}`}
+                          onMouseEnter={() => setHoveredDeckCard(card)}
+                          onMouseLeave={() => setHoveredDeckCard(null)}
+                          onFocus={() => setHoveredDeckCard(card)}
+                          onBlur={() => setHoveredDeckCard(null)}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            removeDeckCard(cardIds.at(-1)!);
+                          }}
+                          aria-label={`${card.name} ${cardIds.length}장, 우클릭하면 한 장을 영구 제거`}
+                        >
+                          <span className="deck-list-cost">{card.cost}</span>
+                          <strong>{card.name}</strong>
+                          <span className="deck-list-count">x{cardIds.length}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <aside className="deck-card-preview" aria-live="polite">
+                      <strong>카드 미리보기</strong>
+                      {hoveredDeckCard ? (
+                        <div className={`card-face ${hoveredDeckCard.kind} ${hoveredDeckCard.damageType}`}>
+                          <CardFace card={hoveredDeckCard} />
+                        </div>
+                      ) : (
+                        <span>덱 카드에 마우스를 올리세요.</span>
+                      )}
+                    </aside>
                   </div>
                 </section>
               </div>
@@ -1554,7 +1594,13 @@ export default function Home() {
               <section className="deck-editor-floor-section">
                 <div className="deck-editor-floor-heading">
                   <div><strong>방 바닥</strong><span>{currentFloorCards.length}장</span></div>
-                  <small>인벤토리 카드를 이곳에 놓을 수 있으며, 방을 떠나도 카드 상태는 변하지 않습니다.</small>
+                  {pendingRemovedCards.length > 0 ? (
+                    <strong className="removal-warning">
+                      경고: 편집 확인 시 카드 {pendingRemovedCards.length}장이 영구 제거됩니다. 카드를 누르면 취소됩니다.
+                    </strong>
+                  ) : (
+                    <small>인벤토리 카드를 이곳에 놓을 수 있으며, 방을 떠나도 카드 상태는 변하지 않습니다.</small>
+                  )}
                 </div>
                 <div className="deck-editor-floor-layout">
                   <div
@@ -1567,6 +1613,18 @@ export default function Home() {
                     }}
                     onDrop={(event) => dropDeckEditorCard(event, "floor")}
                   >
+                    {pendingRemovedCards.map((card) => (
+                      <button
+                        type="button"
+                        className={`deck-editor-card pending-removal-card card-face ${card.kind} ${card.damageType}`}
+                        key={`pending-removal-${card.id}`}
+                        onClick={() => restoreRemovedCard(card.id)}
+                        aria-label={`${card.name}, 제거 예정. 누르면 덱으로 복구`}
+                      >
+                        <CardFace card={card} />
+                        <span className="pending-removal-badge">제거 예정</span>
+                      </button>
+                    ))}
                     {floorGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
@@ -1582,7 +1640,9 @@ export default function Home() {
                         {cardIds.length > 1 && <span className="inventory-card-count">x{cardIds.length}</span>}
                       </button>
                     ))}
-                    {currentFloorCards.length === 0 && <span className="floor-empty-copy">바닥에 카드가 없습니다</span>}
+                    {currentFloorCards.length === 0 && pendingRemovedCards.length === 0 && (
+                      <span className="floor-empty-copy">바닥에 카드가 없습니다</span>
+                    )}
                   </div>
                 </div>
               </section>
