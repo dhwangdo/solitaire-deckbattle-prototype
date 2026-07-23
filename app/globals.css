@@ -218,18 +218,33 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .room-item-indicator {
   position: absolute;
-  right: 9px;
+  right: 10px;
   bottom: 8px;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 2px solid #287443;
-  border-radius: 50%;
-  color: #1d7b3d;
-  background: #d9f0df;
-  box-shadow: 0 2px 5px rgba(0,0,0,.32);
-  font: 900 23px/1 Arial, sans-serif;
+  display: block;
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.38));
+}
+
+.room-item-indicator::before,
+.room-item-indicator::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 2px;
+  background: #91d46d;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.room-item-indicator::before {
+  width: 34px;
+  height: 8px;
+}
+
+.room-item-indicator::after {
+  width: 8px;
+  height: 34px;
 }
 
 .map-player {

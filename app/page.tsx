@@ -1592,7 +1592,7 @@ export default function Home() {
                       : visited && roomType === "combat" && !cleared
                         ? <span>전투</span>
                         : null}
-                    {hasItems && <span className="room-item-indicator" aria-label="아이템 있음">+</span>}
+                    {hasItems && <span className="room-item-indicator" aria-label="아이템 있음" />}
                   </button>
                 );
               })}
