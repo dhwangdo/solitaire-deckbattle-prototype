@@ -487,6 +487,7 @@ export default function Home() {
   const [battleRewardGold, setBattleRewardGold] = useState(0);
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [deckViewerOpen, setDeckViewerOpen] = useState(false);
+  const [deckViewerDeckId, setDeckViewerDeckId] = useState("");
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorArea } | null>(null);
   const deckEditorDragRef = useRef<{ cardId: number; source: DeckEditorArea } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
@@ -1594,6 +1595,7 @@ export default function Home() {
   if (screen === "map") {
     const currentRoomKey = mapRoomKey(mapPosition);
     const canEditDeck = getRoomType(mapPosition, mapSeed) === "empty" || clearedCombats.has(currentRoomKey);
+    const viewedDeck = ownedDecks.find((deck) => deck.id === deckViewerDeckId) ?? activeDeck;
     const rarityOrder: Record<CardRarity, number> = { rare: 0, special: 1, basic: 2 };
     const deckGroups = Array.from(deckCards.reduce((groups, card) => {
       const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
@@ -1619,6 +1621,13 @@ export default function Home() {
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const currentFloorCards = roomDrops[currentRoomKey] ?? [];
     const currentFloorDecks = roomDeckDrops[currentRoomKey] ?? [];
+    const pendingRemovedGroups = Array.from(pendingRemovedCards.reduce((groups, { card }) => {
+      const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
+      const current = groups.get(groupKey);
+      if (current) current.cardIds.push(card.id);
+      else groups.set(groupKey, { card, cardIds: [card.id] });
+      return groups;
+    }, new Map<string, { card: Card; cardIds: number[] }>()).values());
     const safeRoomRoutes = buildSafeRoomRoutes(mapPosition, visitedRooms, clearedCombats, mapSeed);
     const floorGroups = Array.from(currentFloorCards.reduce((groups, card) => {
       const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
@@ -1650,7 +1659,10 @@ export default function Home() {
             <button
               type="button"
               className="deck-viewer-trigger"
-              onClick={() => setDeckViewerOpen(true)}
+              onClick={() => {
+                setDeckViewerDeckId(activeDeckId);
+                setDeckViewerOpen(true);
+              }}
               aria-label={`덱 보기, 현재 ${deckCards.length}장`}
             >
               <span className="deck-stack-icon" aria-hidden="true" />
@@ -1908,33 +1920,39 @@ export default function Home() {
                   </div>
                   <div className="deck-editor-deck-body">
                     <div className="deck-editor-deck-list">
-                      {deckGroups.map(({ card, cardIds }) => (
-                        <button
-                          type="button"
-                          className={`deck-list-entry rarity-${card.rarity} ${originalDeckIdForCard(cardIds.at(-1)!) ? "" : "is-temporary"}`}
-                          key={`${card.effect}:${card.damageType}:${card.name}`}
-                          draggable
-                          onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
-                          onDragEnd={finishDeckEditorDrag}
-                          onMouseEnter={() => setHoveredDeckCard(card)}
-                          onMouseLeave={() => setHoveredDeckCard(null)}
-                          onFocus={() => setHoveredDeckCard(card)}
-                          onBlur={() => setHoveredDeckCard(null)}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            const cardId = cardIds.at(-1)!;
-                            if (originalDeckIdForCard(cardId)) moveDeckCardToTrash(cardId);
-                            else moveDeckCardToInventory(cardId);
-                          }}
-                          aria-label={originalDeckIdForCard(cardIds.at(-1)!)
-                            ? `${card.name} ${cardIds.length}장, 우클릭하면 한 장을 휴지통으로 이동`
-                            : `${card.name} ${cardIds.length}장, 편집 중 추가됨. 우클릭하면 한 장을 인벤토리로 이동`}
-                        >
-                          <span className="deck-list-cost">{card.cost}</span>
-                          <strong>{card.name}</strong>
-                          <span className="deck-list-count">x{cardIds.length}</span>
-                        </button>
-                      ))}
+                      {deckGroups.map(({ card, cardIds }) => {
+                        const cardId = cardIds.at(-1)!;
+                        const isTemporary = !originalDeckIdForCard(cardId);
+                        return (
+                          <button
+                            type="button"
+                            className={`deck-list-entry rarity-${card.rarity} ${isTemporary ? "is-temporary" : ""}`}
+                            key={`${card.effect}:${card.damageType}:${card.name}`}
+                            draggable
+                            onDragStart={(event) => beginDeckEditorDrag(event, cardId, "deck")}
+                            onDragEnd={finishDeckEditorDrag}
+                            onMouseEnter={() => setHoveredDeckCard(card)}
+                            onMouseLeave={() => setHoveredDeckCard(null)}
+                            onFocus={() => setHoveredDeckCard(card)}
+                            onBlur={() => setHoveredDeckCard(null)}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              if (isTemporary) moveDeckCardToInventory(cardId);
+                              else moveDeckCardToTrash(cardId);
+                            }}
+                            aria-label={isTemporary
+                              ? `${card.name} ${cardIds.length}장, 편집 중 추가됨. 우클릭하면 한 장을 인벤토리로 이동`
+                              : `${card.name} ${cardIds.length}장, 우클릭하면 한 장을 휴지통으로 이동`}
+                          >
+                            <span className="deck-list-cost">{card.cost}</span>
+                            <strong>
+                              {card.name}
+                              {isTemporary && <em className="deck-card-new">NEW!</em>}
+                            </strong>
+                            <span className="deck-list-count">x{cardIds.length}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                     <aside className="deck-tools-column">
                       <div className="deck-sort-controls" aria-label="덱 정렬">
@@ -1974,18 +1992,23 @@ export default function Home() {
                         {pendingRemovedCards.length > 0 ? (
                           <>
                             <div className="trash-card-list">
-                              {pendingRemovedCards.map(({ card }) => (
+                              {pendingRemovedGroups.map(({ card, cardIds }) => (
                                 <button
                                   type="button"
-                                  key={`trash-${card.id}`}
+                                  key={`trash-${card.effect}-${card.damageType}-${card.name}`}
                                   draggable
-                                  onDragStart={(event) => beginDeckEditorDrag(event, card.id, "trash")}
+                                  onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "trash")}
                                   onDragEnd={finishDeckEditorDrag}
-                                  onClick={() => restoreRemovedCard(card.id)}
-                                  aria-label={`${card.name}, 제거 예정. 누르거나 덱으로 드래그하면 복구`}
+                                  onMouseEnter={() => setHoveredDeckCard(card)}
+                                  onMouseLeave={() => setHoveredDeckCard(null)}
+                                  onFocus={() => setHoveredDeckCard(card)}
+                                  onBlur={() => setHoveredDeckCard(null)}
+                                  onClick={() => restoreRemovedCard(cardIds.at(-1)!)}
+                                  aria-label={`${card.name} ${cardIds.length}장 제거 예정. 누르거나 덱으로 드래그하면 한 장 복구`}
                                 >
                                   <span>{card.cost}</span>
                                   <strong>{card.name}</strong>
+                                  {cardIds.length > 1 && <b>x{cardIds.length}</b>}
                                 </button>
                               ))}
                             </div>
@@ -2089,18 +2112,33 @@ export default function Home() {
               <header>
                 <div>
                   <p>DECK</p>
-                  <h2 id="deck-viewer-title">{activeDeck?.name ?? "덱 보기"}</h2>
-                  <span>{deckCards.length} / {activeDeck?.capacity ?? 0}장</span>
+                  <h2 id="deck-viewer-title">{viewedDeck?.name ?? "덱 보기"}</h2>
+                  <span>{viewedDeck?.cards.length ?? 0} / {viewedDeck?.capacity ?? 0}장</span>
                 </div>
                 <button type="button" onClick={() => setDeckViewerOpen(false)}>닫기</button>
               </header>
-              <div className="deck-viewer-grid">
-                {deckCards.map((card) => (
-                  <div
-                    className={`deck-viewer-card card-face ${card.kind} ${card.damageType}`}
-                    key={`viewer-${card.id}`}
+              <nav className="deck-viewer-tabs" aria-label="볼 덱 선택">
+                {ownedDecks.map((deck, index) => (
+                  <button
+                    type="button"
+                    className={deck.id === viewedDeck?.id ? "is-active" : ""}
+                    key={`viewer-tab-${deck.id}`}
+                    onClick={() => setDeckViewerDeckId(deck.id)}
                   >
-                    <CardFace card={card} />
+                    <strong>덱 {index + 1}</strong>
+                    <span>{deck.cards.length} / {deck.capacity}</span>
+                  </button>
+                ))}
+                {Array.from({ length: MAX_OWNED_DECKS - ownedDecks.length }, (_, index) => (
+                  <span className="is-empty" key={`viewer-empty-${index}`}>빈 덱 칸</span>
+                ))}
+              </nav>
+              <div className="deck-viewer-grid">
+                {(viewedDeck?.cards ?? []).map((card) => (
+                  <div className="deck-viewer-card" key={`viewer-${card.id}`}>
+                    <div className={`card-face ${card.kind} ${card.damageType}`}>
+                      <CardFace card={card} />
+                    </div>
                   </div>
                 ))}
               </div>
