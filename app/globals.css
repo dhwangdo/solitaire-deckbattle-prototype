@@ -439,7 +439,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   text-align: center;
 }
 
-.owned-deck-tabs button { cursor: pointer; }
+.owned-deck-tabs button { cursor: grab; }
+.owned-deck-tabs button:active { cursor: grabbing; }
 .owned-deck-tabs button:hover { border-color: #4b4a46; }
 .owned-deck-tabs button.is-active { border-color: #275f42; color: #1f5137; background: #d3e2d7; box-shadow: inset 0 0 0 1px #4e8966; }
 .owned-deck-tabs button strong { font-size: 11px; }
@@ -856,6 +857,10 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .deck-editor-floor-cards.is-drop-target { background: #d9e2e7; box-shadow: inset 0 0 0 3px #4f7188; }
+.deck-editor-floor-cards.is-deck-drop-target {
+  background: #d8e7dc;
+  box-shadow: inset 0 0 0 3px #4e8966;
+}
 .floor-empty-copy { align-self: center; margin: auto; color: #77746d; font: 11px Arial, sans-serif; }
 
 .deck-viewer-overlay {
@@ -1025,21 +1030,9 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .deck-editor-footer span { color: #555750; }
 
-.battle-shell {
-  width: min(1440px, 100%);
-  min-height: 100vh;
-  padding-top: 10px;
-  padding-bottom: 8px;
-}
-
-.battle-shell > .topbar { min-height: 64px; padding-bottom: 9px; }
-
 .battlefield {
   position: relative;
-  display: grid;
-  grid-template-rows: 178px minmax(220px, 1fr) 132px 185px;
-  height: min(900px, calc(100vh - 108px));
-  min-height: 715px;
+  min-height: 865px;
   overflow: hidden;
   border: 1px solid #214a38;
   border-radius: 5px;
@@ -1047,44 +1040,25 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   box-shadow: 0 3px 10px rgba(35, 36, 31, .2);
 }
 
-.combatant-row {
-  display: grid;
-  grid-template-columns: minmax(225px, .34fr) minmax(540px, 1fr);
-  min-height: 0;
-  border-bottom: 1px solid rgba(255,255,255,.23);
-}
-
-.player-combat-zone {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-width: 0;
-  padding: 16px 22px;
-  border-right: 1px solid rgba(255,255,255,.16);
-  background: rgba(0,0,0,.035);
-}
-
 .enemy-zone {
   position: relative;
-  min-width: 0;
-  min-height: 0;
-  padding: 5px 14px;
+  min-height: 220px;
+  padding: 18px 20px 12px;
 }
 
 .enemies-row {
   display: flex;
-  justify-content: flex-end;
-  gap: clamp(20px, 5vw, 70px);
-  height: 100%;
+  justify-content: center;
+  gap: clamp(36px, 10vw, 120px);
 }
 
 .enemy-unit {
   position: relative;
   display: grid;
   justify-items: center;
-  width: 230px;
-  min-height: 165px;
-  padding: 5px 10px 4px;
+  width: 250px;
+  min-height: 185px;
+  padding: 11px 14px 8px;
   border: 2px solid transparent;
   border-radius: 5px;
   color: inherit;
@@ -1129,11 +1103,11 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 @keyframes enemy-strike {
-  0% { transform: translateX(0) scale(1); }
-  18% { transform: translateX(18px) scale(.96); }
-  55% { transform: translateX(clamp(-920px, -58vw, -520px)) scale(1.07); }
-  67% { transform: translateX(clamp(-880px, -55vw, -490px)) scale(1.03); }
-  100% { transform: translateX(0) scale(1); }
+  0% { transform: translateY(0) scale(1); }
+  18% { transform: translateY(-16px) scale(.96); }
+  55% { transform: translateY(610px) scale(1.07); }
+  67% { transform: translateY(575px) scale(1.03); }
+  100% { transform: translateY(0) scale(1); }
 }
 
 .dragging-strike .enemy-unit:not(.is-defeated) {
@@ -1269,7 +1243,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   position: relative;
   width: 70px;
   height: 75px;
-  margin-top: 5px;
+  margin-top: 12px;
 }
 
 .monster-face {
@@ -1318,12 +1292,12 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .enemy-unit.goblin .monster-face { background: #9eb279; border-radius: 40% 48% 46% 38%; }
 .enemy-unit.goblin .monster-horns i { width: 10px; height: 18px; border-width: 4px; }
 
-.unit-stats { width: 205px; text-align: center; }
-.unit-stats > strong { display: block; margin: 1px 0 4px; color: white; font-size: 14px; font-weight: 600; }
+.unit-stats { width: 220px; text-align: center; }
+.unit-stats > strong { display: block; margin: 5px 0 7px; color: white; font-size: 14px; font-weight: 600; }
 .healthbar { position: relative; height: 28px; overflow: hidden; border: 2px solid #512522; border-radius: 3px; background: #2c2825; box-shadow: inset 0 1px 3px rgba(0,0,0,.5); }
 .healthbar i { display: block; height: 100%; background: #b34a42; transition: width .2s ease; }
 .healthbar span { position: absolute; inset: 0; display: grid; place-items: center; color: white; font: 800 16px Arial, sans-serif; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
-.enemy-health { width: 205px; }
+.enemy-health { width: 220px; }
 .enemy-passion {
   display: flex;
   align-items: center;
@@ -1338,8 +1312,9 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 @keyframes passion-flare { to { transform: translateY(-2px) scale(1.18); filter: drop-shadow(0 0 4px #ffb02e); } }
 
 .pile-zone {
-  min-height: 0;
-  padding: 8px 22px 5px;
+  min-height: 275px;
+  padding: 12px 22px 10px;
+  border-top: 1px solid rgba(255,255,255,.23);
   border-bottom: 1px solid rgba(0,0,0,.18);
   background: rgba(0,0,0,.045);
 }
@@ -1368,7 +1343,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .solitaire-pile {
   position: relative;
   width: var(--card-w);
-  height: 210px;
+  height: 226px;
   border-radius: 6px;
   transition: background .15s ease, box-shadow .15s ease;
 }
@@ -1526,8 +1501,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-height: 0;
-  padding: 5px 14px;
+  min-height: 158px;
+  padding: 8px 14px;
   transition: background .15s ease, box-shadow .15s ease;
 }
 
@@ -1553,9 +1528,9 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   display: grid;
   place-content: center;
   justify-items: center;
-  width: 78px;
-  height: 72px;
-  padding: 7px 8px 13px;
+  width: 94px;
+  height: 88px;
+  padding: 9px 10px 16px;
   clip-path: polygon(50% 0, 94% 16%, 86% 68%, 50% 100%, 14% 68%, 6% 16%);
   color: white;
   filter: drop-shadow(0 3px 2px rgba(0,0,0,.25));
@@ -1565,7 +1540,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .defense-shield.physical { background: #c76522; }
 .defense-shield.magic { background: #2868ae; }
 .defense-shield span { font-size: 10px; font-weight: 700; }
-.defense-shield strong { margin-top: 1px; font-size: 24px; line-height: 1; }
+.defense-shield strong { margin-top: 2px; font-size: 27px; line-height: 1; }
 
 .combat-buffs {
   display: flex;
@@ -1583,8 +1558,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .status-strip {
-  min-height: 25px;
-  padding: 5px 15px;
+  min-height: 32px;
+  padding: 8px 15px;
   color: rgba(255,255,255,.92);
   text-align: center;
   font: 11px Arial, sans-serif;
@@ -1593,31 +1568,30 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .player-zone {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 125px;
+  grid-template-columns: 235px 1fr 135px;
   align-items: center;
-  min-height: 0;
-  padding: 4px 18px 8px;
+  min-height: 245px;
+  padding: 0 20px 12px;
 }
 
 .damage-popup {
   position: absolute;
   z-index: 40;
-  top: 24px;
-  left: 50%;
+  top: 26px;
+  left: 92px;
   color: #ffddd2;
   font: 900 38px Arial, sans-serif;
   text-shadow: 0 2px 2px #541b18, 0 0 7px rgba(0,0,0,.55);
   pointer-events: none;
   animation: damage-rise .7s ease-out forwards;
-  transform: translateX(-50%);
 }
 
 .damage-popup.is-blocked { color: #d8edf8; font-size: 26px; text-shadow: 0 2px 2px #17435b; }
 
 @keyframes damage-rise {
-  0% { opacity: 0; transform: translate(-50%, 15px) scale(.75); }
-  22% { opacity: 1; transform: translate(-50%, 0) scale(1.15); }
-  100% { opacity: 0; transform: translate(-50%, -42px) scale(1); }
+  0% { opacity: 0; transform: translateY(15px) scale(.75); }
+  22% { opacity: 1; transform: translateY(0) scale(1.15); }
+  100% { opacity: 0; transform: translateY(-42px) scale(1); }
 }
 
 .player-panel {
@@ -1650,7 +1624,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   justify-content: center;
   align-items: end;
   min-width: 0;
-  padding: 5px 6px 0;
+  padding: 12px 6px 0;
 }
 .game-card {
   position: relative;
@@ -1686,7 +1660,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .empty-hand { align-self: center; color: rgba(255,255,255,.65); font: 11px Arial, sans-serif; }
 
-.controls { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.controls { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .solitaire-resource {
   display: flex;
   flex-wrap: wrap;
@@ -1701,9 +1675,9 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   font: 700 19px/1 Arial, sans-serif;
 }
 .solitaire-resource span { color: #f0d478; text-shadow: 0 1px 2px rgba(0,0,0,.55); }
-.energy-orb { display: flex; justify-content: center; align-items: baseline; width: 58px; height: 58px; padding-top: 13px; border: 2px solid #d6e2e8; border-radius: 50%; color: white; background: var(--blue); font-family: Arial, sans-serif; }
-.energy-orb span { font: 700 24px Arial, sans-serif; }
-.energy-orb small { margin-left: 2px; font: 700 13px Arial, sans-serif; opacity: .9; }
+.energy-orb { display: flex; justify-content: center; align-items: baseline; width: 72px; height: 72px; padding-top: 18px; border: 2px solid #d6e2e8; border-radius: 50%; color: white; background: var(--blue); font-family: Arial, sans-serif; }
+.energy-orb span { font: 700 28px Arial, sans-serif; }
+.energy-orb small { margin-left: 2px; font: 700 15px Arial, sans-serif; opacity: .9; }
 .end-turn { padding: 9px 14px; border: 1px solid #5e5547; border-radius: 3px; color: #27231d; background: #eee7d8; box-shadow: 0 2px 2px rgba(0,0,0,.2); cursor: pointer; font-size: 12px; font-weight: 700; }
 .end-turn:hover:not(:disabled) { background: white; }
 .end-turn:disabled { cursor: default; opacity: .5; }
@@ -1726,7 +1700,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .combat-log {
   display: flex;
   gap: 14px;
-  padding: 5px 3px 0;
+  padding: 10px 3px 0;
   overflow: hidden;
   color: #76766f;
   font: 10px Arial, sans-serif;
@@ -1802,8 +1776,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   .enemies-row { justify-content: start; width: 540px; gap: 20px; }
   .pile-zone { overflow-x: auto; }
   .piles { padding: 0 8px; }
-  .combatant-row { grid-template-columns: 190px minmax(480px, 1fr); overflow-x: auto; }
-  .player-zone { grid-template-columns: minmax(0, 1fr) 110px; padding-inline: 12px; }
+  .player-zone { grid-template-columns: 180px 1fr 110px; padding-inline: 12px; }
   .player-avatar { display: none; }
   .player-panel { grid-template-columns: 1fr; }
 }

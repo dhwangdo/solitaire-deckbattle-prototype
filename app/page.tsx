@@ -491,7 +491,8 @@ export default function Home() {
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorArea } | null>(null);
   const deckEditorDragRef = useRef<{ cardId: number; source: DeckEditorArea } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
-  const [deckCaseDragId, setDeckCaseDragId] = useState<string | null>(null);
+  const [deckCaseDrag, setDeckCaseDrag] = useState<{ deckId: string; source: "floor" | "owned" } | null>(null);
+  const deckCaseDragRef = useRef<{ deckId: string; source: "floor" | "owned" } | null>(null);
   const [deckCaseDropSlot, setDeckCaseDropSlot] = useState<number | null>(null);
   const [deckSortMode, setDeckSortMode] = useState<DeckSortMode>("cost");
   const [deckEditorMessage, setDeckEditorMessage] = useState("바닥 카드는 좌클릭으로 인벤토리와 덱으로 옮길 수 있습니다. 원래 덱 카드는 휴지통에서만 제거합니다.");
@@ -908,6 +909,25 @@ export default function Home() {
     deckEditorDragRef.current = null;
     setDeckEditorDrag(null);
     setDeckEditorDropTarget(null);
+  };
+
+  const beginDeckCaseDrag = (
+    event: ReactDragEvent<HTMLElement>,
+    deckId: string,
+    source: "floor" | "owned",
+  ) => {
+    const drag = { deckId, source };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `deck-case:${source}:${deckId}`);
+    deckCaseDragRef.current = drag;
+    setDeckCaseDrag(drag);
+    setDeckCaseDropSlot(null);
+  };
+
+  const finishDeckCaseDrag = () => {
+    deckCaseDragRef.current = null;
+    setDeckCaseDrag(null);
+    setDeckCaseDropSlot(null);
   };
 
   const openDeckEditor = (message: string) => {
@@ -1904,6 +1924,9 @@ export default function Home() {
                         type="button"
                         className={deck.id === activeDeckId ? "is-active" : ""}
                         key={deck.id}
+                        draggable
+                        onDragStart={(event) => beginDeckCaseDrag(event, deck.id, "owned")}
+                        onDragEnd={finishDeckCaseDrag}
                         onClick={() => {
                           setActiveDeckId(deck.id);
                           setHoveredDeckCard(null);
@@ -1924,20 +1947,23 @@ export default function Home() {
                         className={`empty-deck-slot ${deckCaseDropSlot === index ? "is-deck-drop-target" : ""}`}
                         key={`empty-deck-${index}`}
                         onDragOver={(event) => {
-                          if (!deckCaseDragId) return;
+                          const drag = deckCaseDragRef.current ?? deckCaseDrag;
+                          if (drag?.source !== "floor") return;
                           event.preventDefault();
+                          event.stopPropagation();
                           event.dataTransfer.dropEffect = "move";
                           setDeckCaseDropSlot(index);
                         }}
                         onDragLeave={() => setDeckCaseDropSlot((current) => current === index ? null : current)}
                         onDrop={(event) => {
                           event.preventDefault();
-                          if (deckCaseDragId) pickUpFloorDeck(deckCaseDragId);
-                          setDeckCaseDragId(null);
-                          setDeckCaseDropSlot(null);
+                          event.stopPropagation();
+                          const drag = deckCaseDragRef.current ?? deckCaseDrag;
+                          if (drag?.source === "floor") pickUpFloorDeck(drag.deckId);
+                          finishDeckCaseDrag();
                         }}
                       >
-                        {deckCaseDragId ? "여기에 덱 놓기" : "빈 덱 칸"}
+                        {deckCaseDrag?.source === "floor" ? "여기에 덱 놓기" : "빈 덱 칸"}
                       </div>
                     ))}
                   </div>
@@ -2063,8 +2089,15 @@ export default function Home() {
                 </div>
                 <div className="deck-editor-floor-layout">
                   <div
-                    className={`deck-editor-floor-cards ${deckEditorDropTarget === "floor" ? "is-drop-target" : ""}`}
+                    className={`deck-editor-floor-cards ${deckEditorDropTarget === "floor" ? "is-drop-target" : ""} ${deckCaseDrag?.source === "owned" ? "is-deck-drop-target" : ""}`}
                     onDragOver={(event) => {
+                      const deckDrag = deckCaseDragRef.current ?? deckCaseDrag;
+                      if (deckDrag?.source === "owned") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.dataTransfer.dropEffect = "move";
+                        return;
+                      }
                       const drag = deckEditorDragRef.current ?? deckEditorDrag;
                       const source = drag?.source;
                       const temporaryDeckCard = source === "deck"
@@ -2075,7 +2108,17 @@ export default function Home() {
                       event.dataTransfer.dropEffect = "move";
                       setDeckEditorDropTarget("floor");
                     }}
-                    onDrop={(event) => dropDeckEditorCard(event, "floor")}
+                    onDrop={(event) => {
+                      const deckDrag = deckCaseDragRef.current ?? deckCaseDrag;
+                      if (deckDrag?.source === "owned") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dropOwnedDeck(deckDrag.deckId);
+                        finishDeckCaseDrag();
+                        return;
+                      }
+                      dropDeckEditorCard(event, "floor");
+                    }}
                   >
                     {currentFloorDecks.map((deck) => (
                       <button
@@ -2083,15 +2126,8 @@ export default function Home() {
                         className="floor-deck-item"
                         key={deck.id}
                         draggable
-                        onDragStart={(event) => {
-                          event.dataTransfer.effectAllowed = "move";
-                          event.dataTransfer.setData("text/plain", `deck:${deck.id}`);
-                          setDeckCaseDragId(deck.id);
-                        }}
-                        onDragEnd={() => {
-                          setDeckCaseDragId(null);
-                          setDeckCaseDropSlot(null);
-                        }}
+                        onDragStart={(event) => beginDeckCaseDrag(event, deck.id, "floor")}
+                        onDragEnd={finishDeckCaseDrag}
                         onClick={() => pickUpFloorDeck(deck.id)}
                         aria-label={`${deck.name}, 카드 ${deck.cards.length}장, 용량 ${deck.capacity}. 누르면 줍기`}
                       >
@@ -2182,7 +2218,7 @@ export default function Home() {
   }
 
   return (
-    <main className="game-shell battle-shell">
+    <main className="game-shell">
       <header className="topbar">
         <div>
           <p className="eyebrow">SOLITAIRE DECKBATTLE · PROTOTYPE</p>
@@ -2197,26 +2233,8 @@ export default function Home() {
         className={`battlefield ${dragging ? `${dragging.source.type === "hand" ? `dragging-${dragging.card.kind}` : "dragging-from-pile"} dragging-solitaire` : ""} ${lockedEnemyId ? "has-lock" : ""}`}
         aria-label="전투 화면"
       >
-        <div className="combatant-row">
-          <div className="player-combat-zone">
-            {damagePopup && (
-              <div className={`damage-popup ${damagePopup.text === "막음" ? "is-blocked" : ""}`} key={damagePopup.key}>
-                {damagePopup.text}
-              </div>
-            )}
-            <div className="player-panel">
-              <div className="player-avatar">P</div>
-              <div className="player-details">
-                <strong>방랑자</strong>
-                <div className="healthbar player-health">
-                  <i style={{ width: `${(game.playerHp / MAX_PLAYER_HP) * 100}%` }} />
-                  <span>{game.playerHp} / {MAX_PLAYER_HP}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="enemy-zone">
-            <div className="enemies-row">
+        <div className="enemy-zone">
+          <div className="enemies-row">
             {game.enemies.map((enemy) => {
               const defeated = enemy.hp === 0;
               const intent = enemy.awakened ? enemy.awakenedAttack : enemy.pattern[enemy.intentIndex];
@@ -2270,7 +2288,6 @@ export default function Home() {
                 </button>
               );
             })}
-            </div>
           </div>
         </div>
 
@@ -2368,6 +2385,22 @@ export default function Home() {
         </div>
 
         <div className="player-zone">
+          {damagePopup && (
+            <div className={`damage-popup ${damagePopup.text === "막음" ? "is-blocked" : ""}`} key={damagePopup.key}>
+              {damagePopup.text}
+            </div>
+          )}
+          <div className="player-panel">
+            <div className="player-avatar">P</div>
+            <div className="player-details">
+              <strong>방랑자</strong>
+              <div className="healthbar player-health">
+                <i style={{ width: `${(game.playerHp / MAX_PLAYER_HP) * 100}%` }} />
+                <span>{game.playerHp} / {MAX_PLAYER_HP}</span>
+              </div>
+            </div>
+          </div>
+
           <div
             className={`hand ${phase === "discarding" ? "is-discarding" : ""} ${game.pendingDiscards > 0 ? "is-discard-choice" : ""}`}
             data-drop-target="hand"
