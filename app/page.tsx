@@ -2026,7 +2026,6 @@ export default function Home() {
                 </section>
                 <div className="area-flow-arrow inventory-deck-flow" aria-hidden="true">
                   <span />
-                  <span />
                 </div>
               </div>
 
