@@ -486,6 +486,7 @@ export default function Home() {
   const [battleRewardDeck, setBattleRewardDeck] = useState<DeckCase | null>(null);
   const [battleRewardGold, setBattleRewardGold] = useState(0);
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
+  const [deckViewerOpen, setDeckViewerOpen] = useState(false);
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorArea } | null>(null);
   const deckEditorDragRef = useRef<{ cardId: number; source: DeckEditorArea } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
@@ -576,6 +577,7 @@ export default function Home() {
     clearBattleTimers();
     clearMapTravel();
     setDeckEditorOpen(false);
+    setDeckViewerOpen(false);
     setDragging(null);
     setLockedEnemyId(null);
     setAttackingEnemyId(null);
@@ -695,6 +697,7 @@ export default function Home() {
     setBattleRewardDeck(null);
     setBattleRewardGold(0);
     setDeckEditorOpen(false);
+    setDeckViewerOpen(false);
     setDeckEditorSnapshot(null);
     setPendingRemovedCards([]);
     setHoveredDeckCard(null);
@@ -1589,7 +1592,6 @@ export default function Home() {
     game.pendingSweep;
 
   if (screen === "map") {
-    const exploredCount = visitedRooms.size;
     const currentRoomKey = mapRoomKey(mapPosition);
     const canEditDeck = getRoomType(mapPosition, mapSeed) === "empty" || clearedCombats.has(currentRoomKey);
     const rarityOrder: Record<CardRarity, number> = { rare: 0, special: 1, basic: 2 };
@@ -1617,7 +1619,6 @@ export default function Home() {
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const currentFloorCards = roomDrops[currentRoomKey] ?? [];
     const currentFloorDecks = roomDeckDrops[currentRoomKey] ?? [];
-    const latestPendingRemovedCard = pendingRemovedCards.at(-1)?.card ?? null;
     const safeRoomRoutes = buildSafeRoomRoutes(mapPosition, visitedRooms, clearedCombats, mapSeed);
     const floorGroups = Array.from(currentFloorCards.reduce((groups, card) => {
       const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
@@ -1642,11 +1643,19 @@ export default function Home() {
               <div className="map-health" aria-label={`체력 ${runPlayerHp} 중 ${MAX_PLAYER_HP}`}>
                 <span>HP</span><strong>{runPlayerHp} / {MAX_PLAYER_HP}</strong>
               </div>
-              <div><span>골드</span><strong>{gold}</strong></div>
-              <div><span>덱</span><strong>{ownedDecks.length} / {MAX_OWNED_DECKS}</strong></div>
-              <div><span>깊이</span><strong>{mapPosition.y + 1}</strong></div>
-              <div><span>방문</span><strong>{exploredCount}</strong></div>
+              <div className="map-gold" aria-label={`골드 ${gold}`}>
+                <strong>{gold}G</strong>
+              </div>
             </div>
+            <button
+              type="button"
+              className="deck-viewer-trigger"
+              onClick={() => setDeckViewerOpen(true)}
+              aria-label={`덱 보기, 현재 ${deckCards.length}장`}
+            >
+              <span className="deck-stack-icon" aria-hidden="true" />
+              <span>덱 보기</span>
+            </button>
             {canEditDeck && (
               <button
                 type="button"
@@ -1962,19 +1971,24 @@ export default function Home() {
                           dropDeckEditorCard(event, "trash");
                         }}
                       >
-                        {latestPendingRemovedCard ? (
+                        {pendingRemovedCards.length > 0 ? (
                           <>
-                            <button
-                              type="button"
-                              className={`trash-card card-face ${latestPendingRemovedCard.kind} ${latestPendingRemovedCard.damageType}`}
-                              draggable
-                              onDragStart={(event) => beginDeckEditorDrag(event, latestPendingRemovedCard.id, "trash")}
-                              onDragEnd={finishDeckEditorDrag}
-                              onClick={() => restoreRemovedCard(latestPendingRemovedCard.id)}
-                              aria-label={`${latestPendingRemovedCard.name}, 가장 최근 제거 예정 카드. 누르거나 덱으로 드래그하면 복구`}
-                            >
-                              <CardFace card={latestPendingRemovedCard} />
-                            </button>
+                            <div className="trash-card-list">
+                              {pendingRemovedCards.map(({ card }) => (
+                                <button
+                                  type="button"
+                                  key={`trash-${card.id}`}
+                                  draggable
+                                  onDragStart={(event) => beginDeckEditorDrag(event, card.id, "trash")}
+                                  onDragEnd={finishDeckEditorDrag}
+                                  onClick={() => restoreRemovedCard(card.id)}
+                                  aria-label={`${card.name}, 제거 예정. 누르거나 덱으로 드래그하면 복구`}
+                                >
+                                  <span>{card.cost}</span>
+                                  <strong>{card.name}</strong>
+                                </button>
+                              ))}
+                            </div>
                             <small className="trash-warning">
                               총 {pendingRemovedCards.length}장의 카드가 버려집니다
                             </small>
@@ -1994,6 +2008,10 @@ export default function Home() {
               </div>
 
               <section className="deck-editor-floor-section">
+                <div className="area-flow-arrow floor-inventory-flow" aria-hidden="true">
+                  <span />
+                  <span />
+                </div>
                 <div className="deck-editor-floor-heading">
                   <div><strong>방 바닥</strong><span>카드 {currentFloorCards.length}장 · 덱 {currentFloorDecks.length}개</span></div>
                   <small>카드를 좌클릭하면 인벤토리로, 인벤토리 카드를 우클릭하면 바닥으로 이동합니다.</small>
@@ -2062,6 +2080,31 @@ export default function Home() {
                 </aside>
               )}
             </div>
+          </div>
+        )}
+
+        {deckViewerOpen && (
+          <div className="deck-viewer-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-viewer-title">
+            <section className="deck-viewer-panel">
+              <header>
+                <div>
+                  <p>DECK</p>
+                  <h2 id="deck-viewer-title">{activeDeck?.name ?? "덱 보기"}</h2>
+                  <span>{deckCards.length} / {activeDeck?.capacity ?? 0}장</span>
+                </div>
+                <button type="button" onClick={() => setDeckViewerOpen(false)}>닫기</button>
+              </header>
+              <div className="deck-viewer-grid">
+                {deckCards.map((card) => (
+                  <div
+                    className={`deck-viewer-card card-face ${card.kind} ${card.damageType}`}
+                    key={`viewer-${card.id}`}
+                  >
+                    <CardFace card={card} />
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
         )}
       </main>
