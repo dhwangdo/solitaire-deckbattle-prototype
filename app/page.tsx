@@ -118,7 +118,7 @@ type DamagePopup = {
 };
 
 const MAX_PLAYER_HP = 20;
-const STARTING_DECK_SIZE = 10;
+const STARTING_DECK_SIZE = 15;
 const INVENTORY_CAPACITY = 8;
 const MAX_OWNED_DECKS = 3;
 const STARTER_DECK_CAPACITY = 20;
@@ -250,8 +250,8 @@ function createDeck(): Card[] {
     blueprint: CardBlueprint,
   ) => Array.from({ length: count }, () => ({ ...blueprint }));
   const blueprints: CardBlueprint[] = [
-    ...make(5, BASIC_CARD_POOL[0]),
-    ...make(5, BASIC_CARD_POOL[1]),
+    ...make(7, BASIC_CARD_POOL[0]),
+    ...make(8, BASIC_CARD_POOL[1]),
   ];
   if (blueprints.length !== STARTING_DECK_SIZE) {
     throw new Error(`Starting deck must contain ${STARTING_DECK_SIZE} cards.`);
@@ -275,10 +275,11 @@ function createRandomDeck(depth: number, startId: number): DeckCase {
   for (let slot = 0; slot < capacity; slot += 1) {
     const roll = Math.random();
     let pool: CardBlueprint[] | null = null;
-    if (roll < 0.5) pool = null;
+    if (roll < 0.3) pool = null;
     else if (roll < 0.6) pool = BASIC_CARD_POOL;
-    else if (roll < 0.95) pool = SPECIAL_CARD_POOL;
-    else pool = RARE_CARD_POOL;
+    else if (roll < 0.9) pool = SPECIAL_CARD_POOL;
+    else if (roll < 0.95) pool = RARE_CARD_POOL;
+    else pool = null;
     if (!pool) continue;
     const blueprint = pool[Math.floor(Math.random() * pool.length)];
     cards.push({ ...blueprint, id: nextId, revealed: false });
@@ -1508,9 +1509,8 @@ export default function Home() {
           <div className="map-toolbar">
             <div className="map-legend" aria-label="지도 범례">
               <span><i className="legend-current" />현재 위치</span>
-              <span><i className="legend-empty" />빈 방</span>
+              <span><i className="legend-empty" />방</span>
               <span><i className="legend-combat" />전투</span>
-              <span><i className="legend-cleared" />클리어</span>
               <span><i className="legend-unknown" />미방문</span>
             </div>
             <div className="map-toolbar-actions">
@@ -1556,20 +1556,20 @@ export default function Home() {
                 const current = position.x === mapPosition.x && position.y === mapPosition.y;
                 const distance = Math.abs(position.x - mapPosition.x) + Math.abs(position.y - mapPosition.y);
                 const adjacent = distance === 1;
+                const hasItems = (roomDrops[roomKey]?.length ?? 0) > 0
+                  || (roomDeckDrops[roomKey]?.length ?? 0) > 0;
                 const roomState = !visited
                   ? "unknown"
-                  : cleared
-                    ? "cleared"
-                    : roomType;
+                  : roomType === "combat" && !cleared
+                    ? "combat"
+                    : "empty";
                 const roomLabel = current
                   ? "현재 위치"
                   : !visited
                     ? "미지의 방"
-                    : cleared
-                      ? "클리어한 전투 방"
-                      : roomType === "combat"
+                    : roomType === "combat" && !cleared
                         ? "전투 방"
-                        : "빈 방";
+                        : "방";
                 return (
                   <button
                     type="button"
@@ -1589,30 +1589,31 @@ export default function Home() {
                   >
                     {current
                       ? <span className="map-player">P</span>
-                      : visited
-                        ? <span>{cleared ? "정리" : roomType === "combat" ? "전투" : "빈 방"}</span>
+                      : visited && roomType === "combat" && !cleared
+                        ? <span>전투</span>
                         : null}
+                    {hasItems && <span className="room-item-indicator" aria-label="아이템 있음">+</span>}
                   </button>
                 );
               })}
             </div>
             <div className="map-depth-fade" aria-hidden="true" />
           </div>
-          {currentFloorCards.length > 0 && canEditDeck && (
+          {(currentFloorCards.length > 0 || currentFloorDecks.length > 0) && canEditDeck && (
             <button
               type="button"
               className="room-floor-notice"
-              onClick={() => openDeckEditor("바닥 카드를 인벤토리로 드래그하거나 클릭해 주울 수 있습니다.")}
+              onClick={() => openDeckEditor("방 바닥에 떨어진 카드와 덱을 확인할 수 있습니다.")}
             >
               <span>방 바닥</span>
-              <strong>카드 {currentFloorCards.length}장</strong>
+              <strong>카드 {currentFloorCards.length}장 · 덱 {currentFloorDecks.length}개</strong>
               <small>눌러서 확인</small>
             </button>
           )}
         </section>
 
         {deckEditorOpen && (
-          <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title" onClick={cancelDeckEditor}>
+          <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title">
             <section className="deck-editor-panel" onClick={(event) => event.stopPropagation()}>
               <header className="deck-editor-header">
                 <div>
