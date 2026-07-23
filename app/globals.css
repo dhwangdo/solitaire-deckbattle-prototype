@@ -382,24 +382,16 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   color: #272725;
   background: #f5f1e7;
   box-shadow: 0 2px 3px rgba(0,0,0,.17);
-  cursor: grab;
+  cursor: context-menu;
   text-align: left;
 }
 
 .deck-list-entry:hover { border-color: #343331; filter: brightness(1.035); transform: translateX(2px); }
-.deck-list-entry:active { cursor: grabbing; }
+.deck-list-entry:active { cursor: context-menu; }
 .deck-list-entry:focus-visible { outline: 3px solid #315f88; outline-offset: 2px; }
 .deck-list-entry.rarity-special { background: #c7d9e7; }
 .deck-list-entry.rarity-rare { background: #d3c3df; }
 .deck-list-entry.is-dragging { opacity: .35; }
-.deck-list-entry.is-inactive {
-  border-color: #8b8b86;
-  color: #777772;
-  background: #cbc9c3;
-  filter: grayscale(1);
-}
-.deck-list-entry.is-inactive strong { text-decoration: line-through; text-decoration-thickness: 1px; }
-
 .deck-list-cost {
   display: grid;
   place-items: center;
@@ -447,20 +439,6 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-card:focus-visible { outline: 3px solid #2e5f85; outline-offset: 3px; }
 .deck-editor-card.is-dragging { opacity: .32; }
 
-.card-face:has(.card-effect.is-inactive) {
-  color: #696966;
-  background: #d2d1cc;
-  filter: grayscale(1);
-  opacity: .76;
-}
-
-.card-effect.is-inactive,
-.card-effect.is-inactive * {
-  color: #6f6f6c !important;
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-}
-
 .inventory-card-count {
   position: absolute;
   z-index: 8;
@@ -470,38 +448,6 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   color: #222;
   background: rgba(247,245,239,.9);
   font: 800 13px Arial, sans-serif;
-}
-
-.deck-editor-panel:has(.will-deactivate) {
-  animation: pending-deactivation-clock 1.2s steps(1, end) infinite;
-}
-
-.deck-editor-card.will-deactivate {
-  outline: 2px dashed #b76b28;
-  outline-offset: 2px;
-  filter: var(--pending-card-filter, grayscale(0));
-  opacity: var(--pending-card-opacity, 1);
-}
-
-.deck-editor-card.will-deactivate .card-effect,
-.deck-editor-card.will-deactivate .card-effect * {
-  color: var(--pending-effect-color, inherit);
-  text-decoration: var(--pending-effect-decoration, none);
-}
-
-@keyframes pending-deactivation-clock {
-  0%, 49% {
-    --pending-card-filter: grayscale(0);
-    --pending-card-opacity: 1;
-    --pending-effect-color: inherit;
-    --pending-effect-decoration: none;
-  }
-  50%, 100% {
-    --pending-card-filter: grayscale(1);
-    --pending-card-opacity: .58;
-    --pending-effect-color: #6f6f6c;
-    --pending-effect-decoration: line-through;
-  }
 }
 
 .deck-editor-floor-section {

@@ -49,7 +49,6 @@ type Card = {
   draw: number;
   damageType: DamageType;
   revealed: boolean;
-  active: boolean;
 };
 
 type DeckEditorSnapshot = {
@@ -200,7 +199,7 @@ function createEnemies(): EnemyState[] {
   ];
 }
 
-type CardBlueprint = Omit<Card, "id" | "revealed" | "active">;
+type CardBlueprint = Omit<Card, "id" | "revealed">;
 
 const SPECIAL_CARD_POOL: CardBlueprint[] = [
   { kind: "strike", effect: "pommel", rarity: "special", name: "폼멜 타격", cost: 1, value: 6, draw: 1, damageType: "physical" },
@@ -234,7 +233,7 @@ function createBattleRewards(startId: number): Card[] {
       roll -= entry.weight;
       return roll < 0;
     }) ?? weightedPool.at(-1)!;
-    return { ...selected.card, id: startId + index, revealed: false, active: true };
+    return { ...selected.card, id: startId + index, revealed: false };
   });
 }
 
@@ -253,7 +252,7 @@ function createDeck(): Card[] {
   if (blueprints.length !== STARTING_DECK_SIZE) {
     throw new Error(`Starting deck must contain ${STARTING_DECK_SIZE} cards.`);
   }
-  return blueprints.map((card, id) => ({ ...card, id, revealed: false, active: true }));
+  return blueprints.map((card, id) => ({ ...card, id, revealed: false }));
 }
 
 function shuffle<T>(items: T[]): T[] {
@@ -363,7 +362,7 @@ function CardFace({ card }: { card: Card }) {
     <>
       <span className="card-cost">{card.cost}</span>
       <strong className={`card-name rarity-${card.rarity} ${card.name.length >= 6 ? "is-long" : ""}`}>{card.name}</strong>
-      <span className={`card-effect ${card.active ? "" : "is-inactive"}`}>{effectText}</span>
+      <span className="card-effect">{effectText}</span>
     </>
   );
 }
@@ -387,7 +386,7 @@ export default function Home() {
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorArea } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
-  const [deckEditorMessage, setDeckEditorMessage] = useState("카드를 클릭해 덱과 인벤토리 사이에서 이동하세요.");
+  const [deckEditorMessage, setDeckEditorMessage] = useState("인벤토리 카드는 덱에 넣을 수 있고, 덱 카드는 우클릭으로 제거합니다.");
   const [deckEditorSnapshot, setDeckEditorSnapshot] = useState<DeckEditorSnapshot | null>(null);
   const [game, setGame] = useState<GameState>(waitingState);
   const [phase, setPhase] = useState<Phase>("drawing");
@@ -480,17 +479,6 @@ export default function Home() {
     });
   };
 
-  const deactivateFloorCardsOnLeave = (roomKey: string) => {
-    setRoomDrops((current) => {
-      const floorCards = current[roomKey] ?? [];
-      if (!floorCards.some((card) => card.active)) return current;
-      return {
-        ...current,
-        [roomKey]: floorCards.map((card) => card.active ? { ...card, active: false } : card),
-      };
-    });
-  };
-
   const moveOnMap = (deltaX: number, deltaY: number) => {
     if (screen !== "map") return;
     const nextPosition = {
@@ -504,7 +492,6 @@ export default function Home() {
       || nextPosition.y >= MAP_ROWS
     ) return;
 
-    deactivateFloorCardsOnLeave(mapRoomKey(mapPosition));
     const roomKey = mapRoomKey(nextPosition);
     setMapPosition(nextPosition);
     setVisitedRooms((current) => new Set(current).add(roomKey));
@@ -551,7 +538,7 @@ export default function Home() {
     setScreen("map");
   };
 
-  const moveDeckCardToInventory = (cardId: number) => {
+  const removeDeckCard = (cardId: number) => {
     if (deckCards.length <= 1) {
       setDeckEditorMessage("덱에는 반드시 카드가 1장 이상 있어야 합니다.");
       return;
@@ -559,8 +546,7 @@ export default function Home() {
     const card = deckCards.find((item) => item.id === cardId);
     if (!card) return;
     setDeckCards((current) => current.filter((item) => item.id !== cardId));
-    setInventoryCards((current) => [...current, card]);
-    setDeckEditorMessage(`${card.name}을(를) 덱에서 뺐습니다.`);
+    setDeckEditorMessage(`${card.name}을(를) 덱에서 제거했습니다. 편집 확인 시 영구 제거됩니다.`);
   };
 
   const moveInventoryCardToDeck = (cardId: number) => {
@@ -584,7 +570,7 @@ export default function Home() {
       ...current,
       [roomKey]: [...(current[roomKey] ?? []), card],
     }));
-    setDeckEditorMessage(`${card.name}을(를) 바닥에 놓았습니다. 방을 떠나면 비활성화됩니다.`);
+    setDeckEditorMessage(`${card.name}을(를) 바닥에 놓았습니다.`);
   };
 
   const moveFloorCardToInventory = (cardId: number) => {
@@ -597,38 +583,6 @@ export default function Home() {
     }));
     setInventoryCards((current) => [...current, card]);
     setDeckEditorMessage(`${card.name}을(를) 인벤토리에 주웠습니다.`);
-  };
-
-  const moveDeckCardToFloor = (cardId: number) => {
-    if (deckCards.length <= 1) {
-      setDeckEditorMessage("덱에는 반드시 카드가 1장 이상 있어야 합니다.");
-      return;
-    }
-    const card = deckCards.find((item) => item.id === cardId);
-    if (!card) return;
-    const roomKey = mapRoomKey(mapPosition);
-    setDeckCards((current) => current.filter((item) => item.id !== cardId));
-    setRoomDrops((current) => ({
-      ...current,
-      [roomKey]: [...(current[roomKey] ?? []), card],
-    }));
-    setDeckEditorMessage(`${card.name}을(를) 덱에서 방 바닥으로 옮겼습니다.`);
-  };
-
-  const moveFloorCardToDeck = (cardId: number) => {
-    if (deckCards.length >= STARTER_DECK_CASE.capacity) {
-      setDeckEditorMessage(`${STARTER_DECK_CASE.name}에는 최대 ${STARTER_DECK_CASE.capacity}장까지 넣을 수 있습니다.`);
-      return;
-    }
-    const roomKey = mapRoomKey(mapPosition);
-    const card = (roomDrops[roomKey] ?? []).find((item) => item.id === cardId);
-    if (!card) return;
-    setRoomDrops((current) => ({
-      ...current,
-      [roomKey]: (current[roomKey] ?? []).filter((item) => item.id !== cardId),
-    }));
-    setDeckCards((current) => [...current, card]);
-    setDeckEditorMessage(`${card.name}을(를) 방 바닥에서 덱에 넣었습니다.`);
   };
 
   const beginDeckEditorDrag = (
@@ -648,12 +602,9 @@ export default function Home() {
     const source = deckEditorDrag?.source ?? (payloadSource as DeckEditorArea);
     const cardId = deckEditorDrag?.cardId ?? Number(payloadId);
     if (source !== target && Number.isInteger(cardId)) {
-      if (source === "deck" && target === "inventory") moveDeckCardToInventory(cardId);
-      else if (source === "inventory" && target === "deck") moveInventoryCardToDeck(cardId);
+      if (source === "inventory" && target === "deck") moveInventoryCardToDeck(cardId);
       else if (source === "inventory" && target === "floor") moveInventoryCardToFloor(cardId);
       else if (source === "floor" && target === "inventory") moveFloorCardToInventory(cardId);
-      else if (source === "deck" && target === "floor") moveDeckCardToFloor(cardId);
-      else if (source === "floor" && target === "deck") moveFloorCardToDeck(cardId);
     }
     setDeckEditorDrag(null);
     setDeckEditorDropTarget(null);
@@ -681,23 +632,6 @@ export default function Home() {
     if (inventoryCards.length > INVENTORY_CAPACITY) {
       setDeckEditorMessage(`인벤토리를 ${INVENTORY_CAPACITY}장 이하로 줄여야 편집을 확인할 수 있습니다.`);
       return;
-    }
-    if (deckEditorSnapshot) {
-      const finalDeckIds = new Set(deckCards.map((card) => card.id));
-      const removedIds = new Set(deckEditorSnapshot.deck
-        .filter((card) => !finalDeckIds.has(card.id))
-        .map((card) => card.id));
-      if (removedIds.size > 0) {
-        setInventoryCards((current) => current.map((card) => removedIds.has(card.id)
-          ? { ...card, active: false }
-          : card));
-        setRoomDrops((current) => ({
-          ...current,
-          [deckEditorSnapshot.roomKey]: (current[deckEditorSnapshot.roomKey] ?? []).map((card) => removedIds.has(card.id)
-            ? { ...card, active: false }
-            : card),
-        }));
-      }
     }
     setDeckEditorSnapshot(null);
     finishDeckEditorDrag();
@@ -829,10 +763,6 @@ export default function Home() {
   }, [game.enemies, lockedEnemyId]);
 
   const playCard = (card: Card, targetEnemyId?: string) => {
-    if (!card.active) {
-      setGame((current) => ({ ...current, message: `${card.name}은(는) 비활성화되어 작동하지 않습니다.` }));
-      return;
-    }
     const isRewardAttack = card.kind === "strike";
     const isRewardAttackAll = card.effect === "ironRampage";
     const rewardTarget = game.enemies.find((enemy) => enemy.id === targetEnemyId);
@@ -1145,7 +1075,7 @@ export default function Home() {
       if (dropZone === "hand" && current.source.type === "pile") {
         setGame((state) => ({
           ...state,
-          message: "★★로 파일 카드를 가져오는 기능은 현재 비활성화되어 있습니다.",
+          message: "★★로 파일 카드를 가져오는 기능은 현재 사용할 수 없습니다.",
         }));
         dragRef.current = null;
         setDragging(null);
@@ -1354,32 +1284,29 @@ export default function Home() {
     const currentRoomKey = mapRoomKey(mapPosition);
     const canEditDeck = getRoomType(mapPosition, mapSeed) === "empty" || clearedCombats.has(currentRoomKey);
     const deckGroups = Array.from(deckCards.reduce((groups, card) => {
-      const groupKey = `${card.effect}:${card.damageType}:${card.name}:${card.active}`;
+      const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
       const current = groups.get(groupKey);
       if (current) current.cardIds.push(card.id);
       else groups.set(groupKey, { card, cardIds: [card.id] });
       return groups;
     }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
-    const initialEditorDeckIds = new Set(deckEditorSnapshot?.deck.map((card) => card.id) ?? []);
     const inventoryGroups = Array.from(inventoryCards.reduce((groups, card) => {
-      const willDeactivate = card.active && initialEditorDeckIds.has(card.id);
-      const groupKey = `${card.effect}:${card.damageType}:${card.name}:${card.active}:${willDeactivate}`;
+      const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
       const current = groups.get(groupKey);
       if (current) current.cardIds.push(card.id);
-      else groups.set(groupKey, { card, cardIds: [card.id], willDeactivate });
+      else groups.set(groupKey, { card, cardIds: [card.id] });
       return groups;
-    }, new Map<string, { card: Card; cardIds: number[]; willDeactivate: boolean }>()).values()).sort((left, right) =>
+    }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const currentFloorCards = roomDrops[currentRoomKey] ?? [];
     const floorGroups = Array.from(currentFloorCards.reduce((groups, card) => {
-      const willDeactivate = card.active;
-      const groupKey = `${card.effect}:${card.damageType}:${card.name}:${card.active}:${willDeactivate}`;
+      const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
       const current = groups.get(groupKey);
       if (current) current.cardIds.push(card.id);
-      else groups.set(groupKey, { card, cardIds: [card.id], willDeactivate });
+      else groups.set(groupKey, { card, cardIds: [card.id] });
       return groups;
-    }, new Map<string, { card: Card; cardIds: number[]; willDeactivate: boolean }>()).values()).sort((left, right) =>
+    }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const mapWidth = MAP_PADDING * 2 + MAP_COLUMNS * MAP_ROOM_WIDTH + (MAP_COLUMNS - 1) * MAP_CELL_GAP;
     const mapHeight = MAP_PADDING * 2 + MAP_ROWS * MAP_ROOM_HEIGHT + (MAP_ROWS - 1) * MAP_CELL_GAP;
@@ -1403,7 +1330,7 @@ export default function Home() {
               <button
                 type="button"
                 className="deck-editor-trigger"
-                onClick={() => openDeckEditor("카드를 덱과 인벤토리, 방 바닥 사이에서 옮길 수 있습니다.")}
+                onClick={() => openDeckEditor("인벤토리 카드는 덱에 넣거나 바닥에 둘 수 있고, 덱 카드는 우클릭으로 제거합니다.")}
                 aria-label={`덱 편집, 현재 ${deckCards.length}장`}
               >
                 <span className="deck-stack-icon" aria-hidden="true" />
@@ -1527,7 +1454,7 @@ export default function Home() {
                 <div>
                   <p>LOADOUT</p>
                   <h2 id="deck-editor-title">덱 편집</h2>
-                  <span>편집 시작 때 덱에 있었지만 확정 때 덱 밖에 있는 카드만 비활성화됩니다. 인벤토리가 {INVENTORY_CAPACITY}장을 넘으면 편집을 확인할 수 없습니다.</span>
+                  <span>인벤토리 카드는 자유롭게 덱에 넣을 수 있습니다. 덱 카드는 우클릭하여 영구 제거합니다. 인벤토리가 {INVENTORY_CAPACITY}장을 넘으면 편집을 확인할 수 없습니다.</span>
                 </div>
                 <div className="deck-editor-header-actions">
                   <button type="button" className="cancel" onClick={cancelDeckEditor}>취소</button>
@@ -1544,6 +1471,7 @@ export default function Home() {
                 <section
                   className={`deck-editor-column inventory-column ${deckEditorDropTarget === "inventory" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
+                    if (deckEditorDrag?.source !== "floor") return;
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
                     setDeckEditorDropTarget("inventory");
@@ -1557,11 +1485,11 @@ export default function Home() {
                     </strong>
                   </div>
                   <div className="deck-editor-card-list">
-                    {inventoryGroups.map(({ card, cardIds, willDeactivate }) => (
+                    {inventoryGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
-                        className={`deck-editor-card card-face ${card.kind} ${card.damageType} ${willDeactivate ? "will-deactivate" : ""} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
-                        key={`${card.effect}:${card.damageType}:${card.name}:${card.active}:${willDeactivate}`}
+                        className={`deck-editor-card card-face ${card.kind} ${card.damageType} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
+                        key={`${card.effect}:${card.damageType}:${card.name}`}
                         draggable
                         onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "inventory")}
                         onDragEnd={finishDeckEditorDrag}
@@ -1577,7 +1505,7 @@ export default function Home() {
                       </button>
                     ))}
                     {inventoryCards.length === 0 && (
-                      <div className="deck-editor-empty">덱에서 카드를 빼면 이곳에 보관됩니다.</div>
+                      <div className="deck-editor-empty">바닥의 카드를 줍거나 보상 카드를 획득하면 이곳에 보관됩니다.</div>
                     )}
                   </div>
                 </section>
@@ -1585,8 +1513,7 @@ export default function Home() {
                 <section
                   className={`deck-editor-column deck-list-column ${deckEditorDropTarget === "deck" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
-                    if ((deckEditorDrag?.source !== "inventory" && deckEditorDrag?.source !== "floor")
-                      || deckCards.length >= STARTER_DECK_CASE.capacity) {
+                    if (deckEditorDrag?.source !== "inventory" || deckCards.length >= STARTER_DECK_CASE.capacity) {
                       event.dataTransfer.dropEffect = "none";
                       setDeckEditorDropTarget(null);
                       return;
@@ -1607,16 +1534,13 @@ export default function Home() {
                     {deckGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
-                        className={`deck-list-entry rarity-${card.rarity} ${card.active ? "" : "is-inactive"} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
-                        key={`${card.effect}:${card.damageType}:${card.name}:${card.active}`}
-                        draggable
-                        onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
-                        onDragEnd={finishDeckEditorDrag}
+                        className={`deck-list-entry rarity-${card.rarity}`}
+                        key={`${card.effect}:${card.damageType}:${card.name}`}
                         onContextMenu={(event) => {
                           event.preventDefault();
-                          moveDeckCardToInventory(cardIds.at(-1)!);
+                          removeDeckCard(cardIds.at(-1)!);
                         }}
-                        aria-label={`${card.name} ${cardIds.length}장, 우클릭하면 한 장을 인벤토리로 이동`}
+                        aria-label={`${card.name} ${cardIds.length}장, 우클릭하면 한 장을 영구 제거`}
                       >
                         <span className="deck-list-cost">{card.cost}</span>
                         <strong>{card.name}</strong>
@@ -1630,24 +1554,24 @@ export default function Home() {
               <section className="deck-editor-floor-section">
                 <div className="deck-editor-floor-heading">
                   <div><strong>방 바닥</strong><span>{currentFloorCards.length}장</span></div>
-                  <small>인벤토리 카드를 여기로 드래그하면 방을 떠날 때 비활성화됩니다.</small>
+                  <small>인벤토리 카드를 이곳에 놓을 수 있으며, 방을 떠나도 카드 상태는 변하지 않습니다.</small>
                 </div>
                 <div className="deck-editor-floor-layout">
                   <div
                     className={`deck-editor-floor-cards ${deckEditorDropTarget === "floor" ? "is-drop-target" : ""}`}
                     onDragOver={(event) => {
-                      if (deckEditorDrag?.source !== "inventory" && deckEditorDrag?.source !== "deck") return;
+                      if (deckEditorDrag?.source !== "inventory") return;
                       event.preventDefault();
                       event.dataTransfer.dropEffect = "move";
                       setDeckEditorDropTarget("floor");
                     }}
                     onDrop={(event) => dropDeckEditorCard(event, "floor")}
                   >
-                    {floorGroups.map(({ card, cardIds, willDeactivate }) => (
+                    {floorGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
-                        className={`deck-editor-card card-face ${card.kind} ${card.damageType} ${willDeactivate ? "will-deactivate" : ""} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
-                        key={`${card.effect}:${card.damageType}:${card.name}:${card.active}:${willDeactivate}`}
+                        className={`deck-editor-card card-face ${card.kind} ${card.damageType} ${deckEditorDrag?.cardId === cardIds.at(-1) ? "is-dragging" : ""}`}
+                        key={`${card.effect}:${card.damageType}:${card.name}`}
                         draggable
                         onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "floor")}
                         onDragEnd={finishDeckEditorDrag}
