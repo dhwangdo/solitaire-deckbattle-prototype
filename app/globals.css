@@ -218,18 +218,18 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .room-item-indicator {
   position: absolute;
-  right: 8px;
-  bottom: 7px;
+  right: 9px;
+  bottom: 8px;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid #4f4a3e;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #287443;
   border-radius: 50%;
-  color: #292720;
-  background: #eee7c7;
-  box-shadow: 0 1px 3px rgba(0,0,0,.3);
-  font: 900 16px/1 Arial, sans-serif;
+  color: #1d7b3d;
+  background: #d9f0df;
+  box-shadow: 0 2px 5px rgba(0,0,0,.32);
+  font: 900 23px/1 Arial, sans-serif;
 }
 
 .map-player {
