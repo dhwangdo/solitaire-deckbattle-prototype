@@ -35,7 +35,7 @@ type Phase = "drawing" | "playing" | "discarding" | "enemy-turn";
 type Screen = "map" | "battle";
 type MapPosition = { x: number; y: number };
 type RoomType = "empty" | "combat";
-type DeckEditorArea = "deck" | "inventory" | "floor";
+type DeckEditorArea = "deck" | "inventory" | "floor" | "trash";
 type DeckCase = { id: string; name: string; capacity: number; cards: Card[] };
 type PendingRemovedCard = { card: Card; deckId: string };
 
@@ -487,7 +487,7 @@ export default function Home() {
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorArea } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
-  const [deckEditorMessage, setDeckEditorMessage] = useState("인벤토리 카드는 덱에 넣을 수 있고, 덱 카드는 우클릭으로 제거합니다.");
+  const [deckEditorMessage, setDeckEditorMessage] = useState("바닥 카드는 좌클릭으로 인벤토리와 덱으로 옮길 수 있습니다. 원래 덱 카드는 휴지통에서만 제거합니다.");
   const [deckEditorSnapshot, setDeckEditorSnapshot] = useState<DeckEditorSnapshot | null>(null);
   const [pendingRemovedCards, setPendingRemovedCards] = useState<PendingRemovedCard[]>([]);
   const [hoveredDeckCard, setHoveredDeckCard] = useState<Card | null>(null);
@@ -700,7 +700,19 @@ export default function Home() {
     setScreen("map");
   };
 
-  const removeDeckCard = (cardId: number) => {
+  const originalDeckIdForCard = (cardId: number) => {
+    for (const deck of deckEditorSnapshot?.decks ?? []) {
+      if (deck.cards.some((card) => card.id === cardId)) return deck.id;
+    }
+    return null;
+  };
+
+  const moveDeckCardToTrash = (cardId: number) => {
+    const originalDeckId = originalDeckIdForCard(cardId);
+    if (!originalDeckId) {
+      setDeckEditorMessage("편집 중 덱에 넣은 카드는 휴지통이 아니라 인벤토리나 바닥으로 돌릴 수 있습니다.");
+      return;
+    }
     if (deckCards.length <= 1) {
       setDeckEditorMessage("덱에는 반드시 카드가 1장 이상 있어야 합니다.");
       return;
@@ -708,9 +720,9 @@ export default function Home() {
     const card = deckCards.find((item) => item.id === cardId);
     if (!card || !activeDeck) return;
     updateActiveDeckCards((current) => current.filter((item) => item.id !== cardId));
-    setPendingRemovedCards((current) => [...current, { card, deckId: activeDeck.id }]);
+    setPendingRemovedCards((current) => [...current, { card, deckId: originalDeckId }]);
     setHoveredDeckCard(null);
-    setDeckEditorMessage(`${card.name}을(를) 덱에서 제거했습니다. 편집 확인 시 영구 제거됩니다.`);
+    setDeckEditorMessage(`${card.name}을(를) 휴지통에 넣었습니다. 편집 확인 시 영구 제거됩니다.`);
   };
 
   const restoreRemovedCard = (cardId: number) => {
@@ -725,7 +737,36 @@ export default function Home() {
     setOwnedDecks((current) => current.map((deck) => deck.id === pending.deckId
       ? { ...deck, cards: [...deck.cards, pending.card] }
       : deck));
+    setActiveDeckId(pending.deckId);
     setDeckEditorMessage(`${pending.card.name} 제거를 취소하고 덱으로 돌렸습니다.`);
+  };
+
+  const moveDeckCardToInventory = (cardId: number) => {
+    if (originalDeckIdForCard(cardId)) {
+      setDeckEditorMessage("편집 시작 때 덱에 있던 카드는 휴지통으로만 옮길 수 있습니다.");
+      return;
+    }
+    const card = deckCards.find((item) => item.id === cardId);
+    if (!card) return;
+    updateActiveDeckCards((current) => current.filter((item) => item.id !== cardId));
+    setInventoryCards((current) => [...current, card]);
+    setDeckEditorMessage(`${card.name}을(를) 인벤토리로 돌렸습니다.`);
+  };
+
+  const moveDeckCardToFloor = (cardId: number) => {
+    if (originalDeckIdForCard(cardId)) {
+      setDeckEditorMessage("편집 시작 때 덱에 있던 카드는 휴지통으로만 옮길 수 있습니다.");
+      return;
+    }
+    const card = deckCards.find((item) => item.id === cardId);
+    if (!card) return;
+    const roomKey = mapRoomKey(mapPosition);
+    updateActiveDeckCards((current) => current.filter((item) => item.id !== cardId));
+    setRoomDrops((current) => ({
+      ...current,
+      [roomKey]: [...(current[roomKey] ?? []), card],
+    }));
+    setDeckEditorMessage(`${card.name}을(를) 방 바닥으로 돌렸습니다.`);
   };
 
   const moveInventoryCardToDeck = (cardId: number) => {
@@ -762,6 +803,22 @@ export default function Home() {
     }));
     setInventoryCards((current) => [...current, card]);
     setDeckEditorMessage(`${card.name}을(를) 인벤토리에 주웠습니다.`);
+  };
+
+  const moveFloorCardToDeck = (cardId: number) => {
+    if (!activeDeck || deckCards.length >= activeDeck.capacity) {
+      setDeckEditorMessage(`${activeDeck?.name ?? "현재 덱"}에는 더 이상 카드를 넣을 수 없습니다.`);
+      return;
+    }
+    const roomKey = mapRoomKey(mapPosition);
+    const card = (roomDrops[roomKey] ?? []).find((item) => item.id === cardId);
+    if (!card) return;
+    setRoomDrops((current) => ({
+      ...current,
+      [roomKey]: (current[roomKey] ?? []).filter((item) => item.id !== cardId),
+    }));
+    updateActiveDeckCards((current) => [...current, card]);
+    setDeckEditorMessage(`${card.name}을(를) 바닥에서 덱에 넣었습니다.`);
   };
 
   const pickUpFloorDeck = (deckId: string) => {
@@ -823,6 +880,11 @@ export default function Home() {
       if (source === "inventory" && target === "deck") moveInventoryCardToDeck(cardId);
       else if (source === "inventory" && target === "floor") moveInventoryCardToFloor(cardId);
       else if (source === "floor" && target === "inventory") moveFloorCardToInventory(cardId);
+      else if (source === "floor" && target === "deck") moveFloorCardToDeck(cardId);
+      else if (source === "deck" && target === "inventory") moveDeckCardToInventory(cardId);
+      else if (source === "deck" && target === "floor") moveDeckCardToFloor(cardId);
+      else if (source === "deck" && target === "trash") moveDeckCardToTrash(cardId);
+      else if (source === "trash" && target === "deck") restoreRemovedCard(cardId);
     }
     setDeckEditorDrag(null);
     setDeckEditorDropTarget(null);
@@ -1575,7 +1637,7 @@ export default function Home() {
               <button
                 type="button"
                 className="deck-editor-trigger"
-                onClick={() => openDeckEditor("인벤토리 카드는 덱에 넣거나 바닥에 둘 수 있고, 덱 카드는 우클릭으로 제거합니다.")}
+                onClick={() => openDeckEditor("좌클릭: 바닥 → 인벤토리 → 덱. 원래 덱 카드는 우클릭하거나 드래그하여 휴지통으로 옮깁니다.")}
                 aria-label={`덱 편집, 현재 ${deckCards.length}장`}
               >
                 <span className="deck-stack-icon" aria-hidden="true" />
@@ -1711,7 +1773,7 @@ export default function Home() {
                 <div>
                   <p>LOADOUT</p>
                   <h2 id="deck-editor-title">덱 편집</h2>
-                  <span>인벤토리 카드는 활성 덱에 넣을 수 있습니다. 덱 안 카드는 우클릭하여 제거하고, 보유 덱 탭은 좌클릭으로 선택·우클릭으로 바닥에 놓습니다. 인벤토리가 {INVENTORY_CAPACITY}장을 넘으면 확인할 수 없습니다.</span>
+                  <span>바닥·인벤토리에서 시작한 카드는 자유롭게 오갈 수 있습니다. 원래 덱 카드는 휴지통으로만 옮길 수 있으며, 편집 확인 전에는 원래 덱으로 복구할 수 있습니다.</span>
                 </div>
                 <div className="deck-editor-header-actions">
                   <button type="button" className="cancel" onClick={cancelDeckEditor}>취소</button>
@@ -1728,7 +1790,11 @@ export default function Home() {
                 <section
                   className={`deck-editor-column inventory-column ${deckEditorDropTarget === "inventory" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
-                    if (deckEditorDrag?.source !== "floor") return;
+                    const source = deckEditorDrag?.source;
+                    const temporaryDeckCard = source === "deck"
+                      && deckEditorDrag
+                      && !originalDeckIdForCard(deckEditorDrag.cardId);
+                    if (source !== "floor" && !temporaryDeckCard) return;
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
                     setDeckEditorDropTarget("inventory");
@@ -1770,7 +1836,10 @@ export default function Home() {
                 <section
                   className={`deck-editor-column deck-list-column ${deckEditorDropTarget === "deck" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
-                    if (deckEditorDrag?.source !== "inventory" || !activeDeck || deckCards.length >= activeDeck.capacity) {
+                    const source = deckEditorDrag?.source;
+                    const restoringTrash = source === "trash";
+                    const addingCard = source === "inventory" || source === "floor";
+                    if (!restoringTrash && (!addingCard || !activeDeck || deckCards.length >= activeDeck.capacity)) {
                       event.dataTransfer.dropEffect = "none";
                       setDeckEditorDropTarget(null);
                       return;
@@ -1817,17 +1886,24 @@ export default function Home() {
                       {deckGroups.map(({ card, cardIds }) => (
                         <button
                           type="button"
-                          className={`deck-list-entry rarity-${card.rarity}`}
+                          className={`deck-list-entry rarity-${card.rarity} ${originalDeckIdForCard(cardIds.at(-1)!) ? "" : "is-temporary"}`}
                           key={`${card.effect}:${card.damageType}:${card.name}`}
+                          draggable
+                          onDragStart={(event) => beginDeckEditorDrag(event, cardIds.at(-1)!, "deck")}
+                          onDragEnd={finishDeckEditorDrag}
                           onMouseEnter={() => setHoveredDeckCard(card)}
                           onMouseLeave={() => setHoveredDeckCard(null)}
                           onFocus={() => setHoveredDeckCard(card)}
                           onBlur={() => setHoveredDeckCard(null)}
                           onContextMenu={(event) => {
                             event.preventDefault();
-                            removeDeckCard(cardIds.at(-1)!);
+                            const cardId = cardIds.at(-1)!;
+                            if (originalDeckIdForCard(cardId)) moveDeckCardToTrash(cardId);
+                            else moveDeckCardToInventory(cardId);
                           }}
-                          aria-label={`${card.name} ${cardIds.length}장, 우클릭하면 한 장을 영구 제거`}
+                          aria-label={originalDeckIdForCard(cardIds.at(-1)!)
+                            ? `${card.name} ${cardIds.length}장, 우클릭하면 한 장을 휴지통으로 이동`
+                            : `${card.name} ${cardIds.length}장, 편집 중 추가됨. 우클릭하면 한 장을 인벤토리로 이동`}
                         >
                           <span className="deck-list-cost">{card.cost}</span>
                           <strong>{card.name}</strong>
@@ -1844,6 +1920,47 @@ export default function Home() {
                       ) : (
                         <span>덱 카드에 마우스를 올리세요.</span>
                       )}
+                      <div
+                        className={`trash-slot ${deckEditorDropTarget === "trash" ? "is-drop-target" : ""} ${pendingRemovedCards.length > 0 ? "has-cards" : ""}`}
+                        onDragOver={(event) => {
+                          if (
+                            deckEditorDrag?.source !== "deck"
+                            || !originalDeckIdForCard(deckEditorDrag.cardId)
+                          ) return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          setDeckEditorDropTarget("trash");
+                        }}
+                        onDrop={(event) => dropDeckEditorCard(event, "trash")}
+                      >
+                        <strong>휴지통</strong>
+                        <span className="trash-icon" aria-hidden="true" />
+                        {pendingRemovedCards.length === 0 ? (
+                          <small>원래 덱 카드를 이곳에 드래그</small>
+                        ) : (
+                          <>
+                            <small className="trash-warning">
+                              편집 확인 시 {pendingRemovedCards.length}장 영구 제거
+                            </small>
+                            <div className="trash-card-list">
+                              {pendingRemovedCards.map(({ card }) => (
+                                <button
+                                  type="button"
+                                  key={`trash-${card.id}`}
+                                  draggable
+                                  onDragStart={(event) => beginDeckEditorDrag(event, card.id, "trash")}
+                                  onDragEnd={finishDeckEditorDrag}
+                                  onClick={() => restoreRemovedCard(card.id)}
+                                  aria-label={`${card.name}, 제거 예정. 누르거나 덱으로 드래그하면 복구`}
+                                >
+                                  <span>{card.cost}</span>
+                                  <strong>{card.name}</strong>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </aside>
                   </div>
                 </section>
@@ -1852,19 +1969,17 @@ export default function Home() {
               <section className="deck-editor-floor-section">
                 <div className="deck-editor-floor-heading">
                   <div><strong>방 바닥</strong><span>카드 {currentFloorCards.length}장 · 덱 {currentFloorDecks.length}개</span></div>
-                  {pendingRemovedCards.length > 0 ? (
-                    <strong className="removal-warning">
-                      경고: 편집 확인 시 카드 {pendingRemovedCards.length}장이 영구 제거됩니다. 카드를 누르면 취소됩니다.
-                    </strong>
-                  ) : (
-                    <small>인벤토리 카드를 이곳에 놓을 수 있으며, 방을 떠나도 카드 상태는 변하지 않습니다.</small>
-                  )}
+                  <small>카드를 좌클릭하면 인벤토리로, 인벤토리 카드를 우클릭하면 바닥으로 이동합니다.</small>
                 </div>
                 <div className="deck-editor-floor-layout">
                   <div
                     className={`deck-editor-floor-cards ${deckEditorDropTarget === "floor" ? "is-drop-target" : ""}`}
                     onDragOver={(event) => {
-                      if (deckEditorDrag?.source !== "inventory") return;
+                      const source = deckEditorDrag?.source;
+                      const temporaryDeckCard = source === "deck"
+                        && deckEditorDrag
+                        && !originalDeckIdForCard(deckEditorDrag.cardId);
+                      if (source !== "inventory" && !temporaryDeckCard) return;
                       event.preventDefault();
                       event.dataTransfer.dropEffect = "move";
                       setDeckEditorDropTarget("floor");
@@ -1885,18 +2000,6 @@ export default function Home() {
                         <small>눌러서 줍기</small>
                       </button>
                     ))}
-                    {pendingRemovedCards.map(({ card }) => (
-                      <button
-                        type="button"
-                        className={`deck-editor-card pending-removal-card card-face ${card.kind} ${card.damageType}`}
-                        key={`pending-removal-${card.id}`}
-                        onClick={() => restoreRemovedCard(card.id)}
-                        aria-label={`${card.name}, 제거 예정. 누르면 덱으로 복구`}
-                      >
-                        <CardFace card={card} />
-                        <span className="pending-removal-badge">제거 예정</span>
-                      </button>
-                    ))}
                     {floorGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
@@ -1912,7 +2015,7 @@ export default function Home() {
                         {cardIds.length > 1 && <span className="inventory-card-count">x{cardIds.length}</span>}
                       </button>
                     ))}
-                    {currentFloorCards.length === 0 && currentFloorDecks.length === 0 && pendingRemovedCards.length === 0 && (
+                    {currentFloorCards.length === 0 && currentFloorDecks.length === 0 && (
                       <span className="floor-empty-copy">바닥에 카드가 없습니다</span>
                     )}
                   </div>

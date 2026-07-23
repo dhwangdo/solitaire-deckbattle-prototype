@@ -454,9 +454,10 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 12px;
   min-width: 0;
   padding: 14px 10px;
+  overflow-y: auto;
   border-left: 1px solid #aaa69b;
   background: rgba(255,255,255,.3);
 }
@@ -469,13 +470,133 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .deck-card-preview > span {
-  margin: auto 4px;
+  margin: 22px 4px;
   color: #77736c;
   font: 10px/1.5 Arial, sans-serif;
   text-align: center;
 }
 
 .deck-card-preview .card-face { flex: none; pointer-events: none; }
+
+.trash-slot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 128px;
+  margin-top: auto;
+  padding: 9px 7px;
+  border: 1px dashed #8c7773;
+  border-radius: 3px;
+  color: #6d6560;
+  background: rgba(241,235,229,.72);
+  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+
+.trash-slot > strong {
+  font: 700 11px Arial, sans-serif;
+}
+
+.trash-slot > small {
+  color: #77706a;
+  font: 9px/1.35 Arial, sans-serif;
+  text-align: center;
+}
+
+.trash-slot.is-drop-target {
+  border-color: #9c342f;
+  background: #efd5d1;
+  box-shadow: inset 0 0 0 3px rgba(156,52,47,.24);
+}
+
+.trash-slot.has-cards {
+  border-style: solid;
+  border-color: #a14a43;
+  background: #ead8d4;
+}
+
+.trash-icon {
+  position: relative;
+  display: block;
+  width: 30px;
+  height: 31px;
+  border: 3px solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 3px 3px;
+  color: #76534f;
+}
+
+.trash-icon::before {
+  position: absolute;
+  top: -8px;
+  left: -6px;
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  content: "";
+}
+
+.trash-icon::after {
+  position: absolute;
+  top: -13px;
+  left: 7px;
+  width: 10px;
+  height: 5px;
+  border: 3px solid currentColor;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  content: "";
+}
+
+.trash-warning {
+  color: #8b302b !important;
+  font-weight: 700 !important;
+}
+
+.trash-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.trash-card-list button {
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr);
+  align-items: center;
+  min-height: 28px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #8b5b56;
+  border-radius: 2px;
+  color: #332e2c;
+  background: #f5e9e6;
+  cursor: grab;
+  text-align: left;
+}
+
+.trash-card-list button:hover { border-color: #6f2e29; background: #fff2ef; }
+.trash-card-list button:active { cursor: grabbing; }
+.trash-card-list button > span {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  color: #111;
+  background: #22a8df;
+  font: 800 12px Arial, sans-serif;
+}
+.trash-card-list button > strong {
+  overflow: hidden;
+  padding: 0 5px;
+  font: 600 10px Arial, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .deck-list-entry {
   display: grid;
@@ -499,6 +620,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-list-entry:focus-visible { outline: 3px solid #315f88; outline-offset: 2px; }
 .deck-list-entry.rarity-special { background: #c7d9e7; }
 .deck-list-entry.rarity-rare { background: #d3c3df; }
+.deck-list-entry.is-temporary { box-shadow: inset 3px 0 0 #4b8b65, 0 2px 3px rgba(0,0,0,.17); }
 .deck-list-entry.is-dragging { opacity: .35; }
 .deck-list-cost {
   display: grid;
@@ -582,15 +704,6 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-floor-heading strong { font-size: 13px; }
 .deck-editor-floor-heading span { color: #66645e; font-size: 11px; }
 .deck-editor-floor-heading small { color: #706e67; font-size: 10px; }
-.deck-editor-floor-heading .removal-warning {
-  padding: 5px 8px;
-  border: 1px solid #a13a34;
-  border-radius: 3px;
-  color: #842d29;
-  background: #f1d5d1;
-  font: 800 10px Arial, sans-serif;
-}
-
 .deck-editor-floor-layout {
   min-height: 148px;
   height: 100%;
@@ -613,28 +726,6 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 .deck-editor-floor-cards.is-drop-target { background: #d9e2e7; box-shadow: inset 0 0 0 3px #4f7188; }
 .floor-empty-copy { align-self: center; margin: auto; color: #77746d; font: 11px Arial, sans-serif; }
-
-.pending-removal-card {
-  flex: none;
-  outline: 3px solid #a63b35;
-  outline-offset: 2px;
-  filter: saturate(.72);
-}
-
-.pending-removal-card:hover { box-shadow: 0 0 0 4px rgba(166,59,53,.2), 0 8px 16px rgba(0,0,0,.3); }
-
-.pending-removal-badge {
-  position: absolute;
-  z-index: 9;
-  right: -5px;
-  bottom: -6px;
-  padding: 4px 6px;
-  border: 1px solid #702521;
-  border-radius: 2px;
-  color: white;
-  background: #a63b35;
-  font: 800 10px Arial, sans-serif;
-}
 
 .floor-deck-item,
 .battle-reward-deck {
