@@ -137,6 +137,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .legend-current { background: #e6c85f; }
 .legend-empty { background: #deddd8; }
 .legend-combat { background: #5d6060; }
+.legend-shop { background: #9a7c43; }
 .legend-cleared { background: #909493; }
 .legend-unknown { background: #141616; }
 
@@ -214,6 +215,12 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .map-room.is-combat { border-color: #393b3b; color: white; background: #5d6060; }
+.map-room.is-shop {
+  border-color: #5f4c2b;
+  color: #fff7dc;
+  background: #8b7041;
+  box-shadow: inset 0 0 0 1px rgba(255,239,184,.28), 0 3px 5px rgba(0,0,0,.24);
+}
 .map-room.is-cleared { border-color: #5b5f5e; color: white; background: #909493; }
 .map-room.is-adjacent,
 .map-room.is-reachable { cursor: pointer; box-shadow: 0 0 0 3px #d8d8d2, 0 4px 12px rgba(0,0,0,.42); }
@@ -281,8 +288,100 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   pointer-events: none;
 }
 
+.shop-overlay {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20,21,20,.78);
+}
+
+.shop-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(980px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid #5f5139;
+  border-radius: 5px;
+  background: #e6dfcf;
+  box-shadow: 0 16px 50px rgba(0,0,0,.5);
+}
+
+.shop-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #b8ab90;
+  background: #f7f2e6;
+}
+
+.shop-panel header p { margin: 0 0 3px; color: #8a7041; font: 9px Arial, sans-serif; letter-spacing: .14em; }
+.shop-panel header h2 { margin: 0; font-size: 24px; }
+.shop-panel header div > span { color: #716b60; font: 11px Arial, sans-serif; }
+.shop-header-status { display: flex; align-items: center; gap: 11px; font-family: Arial, sans-serif; }
+.shop-header-status > strong { color: #876217; font-size: 20px; }
+.shop-header-status > span.is-full { color: #a43530; font-weight: 800; }
+.shop-header-status button {
+  padding: 8px 14px;
+  border: 1px solid #746b5a;
+  border-radius: 3px;
+  background: #eee8dc;
+  cursor: pointer;
+  font-weight: 700;
+}
+.shop-header-status button:hover { background: white; }
+
+.shop-stock {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 14px;
+  min-height: 0;
+  padding: 28px 22px;
+  overflow: auto;
+  background: #d7cfbd;
+}
+
+.shop-offer {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 15px 9px 12px;
+  border: 1px solid #8b816e;
+  border-radius: 4px;
+  background: rgba(247,243,233,.72);
+  cursor: pointer;
+}
+.shop-offer:hover:not(:disabled) { border-color: #4d694e; background: #f9f7f0; transform: translateY(-3px); }
+.shop-offer.is-sold { filter: grayscale(1); opacity: .42; cursor: default; }
+.shop-card { position: relative; flex: none; }
+.shop-price {
+  min-width: 58px;
+  padding: 5px 9px;
+  border: 1px solid #8b6b27;
+  border-radius: 12px;
+  color: #664b13;
+  background: #f0d787;
+  font: 800 13px Arial, sans-serif;
+}
+.shop-panel > footer {
+  min-height: 44px;
+  padding: 13px 18px;
+  border-top: 1px solid #b8ab90;
+  background: #f7f2e6;
+  color: #5e5a51;
+  font: 11px Arial, sans-serif;
+}
+
 .deck-editor-trigger,
-.deck-viewer-trigger {
+.deck-viewer-trigger,
+.shop-trigger {
   display: grid;
   grid-template-columns: 30px auto;
   align-items: center;
@@ -298,7 +397,20 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .deck-editor-trigger:hover,
-.deck-viewer-trigger:hover { background: white; }
+.deck-viewer-trigger:hover,
+.shop-trigger:hover { background: white; }
+
+.shop-trigger > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #896313;
+  border-radius: 50%;
+  color: #896313;
+  font: 900 14px Georgia, serif;
+}
+.shop-trigger > strong { font-size: 11px; }
 
 .deck-stack-icon {
   position: relative;
@@ -798,6 +910,61 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .deck-editor-card:hover { z-index: 2; transform: translateY(-6px); box-shadow: 0 8px 16px rgba(0,0,0,.3); }
 .deck-editor-card:focus-visible { outline: 3px solid #2e5f85; outline-offset: 3px; }
 .deck-editor-card.is-dragging { opacity: .32; }
+
+.consumable-ticket {
+  position: relative;
+  display: grid;
+  flex: none;
+  grid-template-rows: 42px auto 1fr;
+  place-items: center;
+  width: var(--card-w);
+  height: var(--card-h);
+  padding: 9px 8px 10px;
+  overflow: hidden;
+  border: 1px solid #6d6657;
+  border-radius: 5px;
+  color: #292824;
+  background: #e9dfbd;
+  box-shadow: 0 3px 6px rgba(0,0,0,.22);
+  cursor: pointer;
+  text-align: center;
+}
+
+.consumable-ticket::before,
+.consumable-ticket::after {
+  position: absolute;
+  left: -7px;
+  width: 13px;
+  height: 13px;
+  border: 1px solid #6d6657;
+  border-radius: 50%;
+  background: #d8d7d2;
+  content: "";
+}
+.consumable-ticket::before { top: 39px; }
+.consumable-ticket::after { bottom: 39px; }
+.consumable-ticket.swiftTicket { background: #cfdfea; }
+.consumable-ticket.extractTicket { background: #e9dfbd; }
+.consumable-ticket:hover { border-color: #34312b; transform: translateY(-4px); }
+.consumable-ticket.is-selected {
+  border-color: #a64036;
+  box-shadow: 0 0 0 3px #d66e62, 0 4px 10px rgba(0,0,0,.3);
+}
+.ticket-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font: 900 16px Georgia, serif;
+}
+.consumable-ticket > strong { font-size: 13px; }
+.consumable-ticket > small { align-self: center; font: 9px/1.4 Arial, sans-serif; }
+.inventory-ticket,
+.floor-ticket { cursor: grab; }
+.inventory-ticket:active,
+.floor-ticket:active { cursor: grabbing; }
 
 .inventory-card-count {
   position: absolute;
@@ -1618,6 +1785,39 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 .player-details strong { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 500; }
 .player-health { width: 165px; }
 
+.battle-consumables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 180px;
+  margin-top: 6px;
+}
+.battle-consumables button {
+  display: grid;
+  grid-template-columns: 20px auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 27px;
+  padding: 2px 6px 2px 3px;
+  border: 1px solid #d0c49f;
+  border-radius: 3px;
+  color: #2d2a24;
+  background: #e9dfbd;
+  cursor: pointer;
+}
+.battle-consumables button.swiftTicket { background: #cfdfea; }
+.battle-consumables button:disabled { cursor: default; filter: grayscale(.65); opacity: .55; }
+.battle-consumables button > span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font: 800 10px Arial, sans-serif;
+}
+.battle-consumables button > strong { margin: 0; font: 700 9px Arial, sans-serif; }
+
 .hand {
   position: relative;
   display: flex;
@@ -1756,6 +1956,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 }
 
 .battle-reward-card { flex: none; text-align: left; }
+.battle-reward-consumable { cursor: default; }
+.battle-reward-consumable:hover { transform: none; }
 .battle-reward-deck { margin-inline: auto; }
 .battle-no-extra-reward {
   display: grid;
@@ -1770,6 +1972,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
 
 @media (max-width: 900px) {
   .map-viewport { min-height: 520px; }
+  .shop-stock { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
   .deck-editor-stage,
   .deck-editor-panel { height: calc(100vh - 28px); }
   .enemy-zone { overflow-x: auto; }
@@ -1790,6 +1993,9 @@ h1 { margin: 0; font-size: 25px; font-weight: 600; }
   .map-run-stats > div { min-width: 48px; padding: 5px 6px; }
   .map-run-stats .map-health { min-width: 82px; }
   .map-run-stats strong { font-size: 13px; }
+  .shop-panel > header { align-items: start; flex-direction: column; }
+  .shop-header-status { width: 100%; justify-content: space-between; }
+  .shop-stock { grid-template-columns: repeat(2, minmax(125px, 1fr)); }
   .map-toolbar { align-items: start; }
   .map-legend { gap: 6px 9px; max-width: 250px; }
   .map-help { display: none; }

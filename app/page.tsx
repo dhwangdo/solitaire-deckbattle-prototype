@@ -34,11 +34,27 @@ type CardEffect =
 type Phase = "drawing" | "playing" | "discarding" | "enemy-turn";
 type Screen = "map" | "battle";
 type MapPosition = { x: number; y: number };
-type RoomType = "empty" | "combat";
+type RoomType = "empty" | "combat" | "shop";
 type DeckEditorArea = "deck" | "inventory" | "floor" | "trash";
 type DeckSortMode = "cost" | "rarity";
 type DeckCase = { id: string; name: string; capacity: number; cards: Card[] };
 type PendingRemovedCard = { card: Card; deckId: string };
+type ConsumableType = "extractTicket" | "swiftTicket";
+type Consumable = {
+  id: string;
+  type: ConsumableType;
+  name: string;
+  description: string;
+};
+type ConsumableArea = "inventory" | "floor";
+type RewardDropType = "card" | "consumable" | "deck";
+type ShopOffer = {
+  id: string;
+  price: number;
+  card?: Card;
+  consumable?: Consumable;
+  sold: boolean;
+};
 
 type Card = {
   id: number;
@@ -58,7 +74,9 @@ type DeckEditorSnapshot = {
   decks: DeckCase[];
   activeDeckId: string;
   inventory: Card[];
+  consumables: Consumable[];
   floorCards: Card[];
+  floorConsumables: Consumable[];
   floorDecks: DeckCase[];
 };
 
@@ -123,6 +141,8 @@ const STARTING_DECK_SIZE = 15;
 const INVENTORY_CAPACITY = 8;
 const MAX_OWNED_DECKS = 3;
 const STARTER_DECK_CAPACITY = 20;
+const SHOP_ROOM_CHANCE = 0.05;
+const COMBAT_ROOM_CHANCE = 0.35;
 const MAP_COLUMNS = 15;
 const MAP_ROWS = 60;
 const MAP_ROOM_WIDTH = 204;
@@ -154,7 +174,8 @@ function getRoomType(position: MapPosition, seed: number): RoomType {
     ^ Math.imul(seed + 11, 1442695041);
   hash = Math.imul(hash ^ (hash >>> 13), 1274126177);
   const roll = ((hash ^ (hash >>> 16)) >>> 0) / 4294967296;
-  return roll < 0.35 ? "combat" : "empty";
+  if (roll < SHOP_ROOM_CHANCE) return "shop";
+  return roll < SHOP_ROOM_CHANCE + COMBAT_ROOM_CHANCE ? "combat" : "empty";
 }
 
 const MAP_DIRECTIONS = [
@@ -180,7 +201,7 @@ function buildSafeRoomRoutes(
       if (next.x < 0 || next.x >= MAP_COLUMNS || next.y < 0 || next.y >= MAP_ROWS) continue;
       const nextKey = mapRoomKey(next);
       if (previous.has(nextKey) || !visitedRooms.has(nextKey)) continue;
-      const safe = getRoomType(next, seed) === "empty" || clearedCombats.has(nextKey);
+      const safe = getRoomType(next, seed) !== "combat" || clearedCombats.has(nextKey);
       if (!safe) continue;
       previous.set(nextKey, mapRoomKey(current));
       queue.push(next);
@@ -296,8 +317,12 @@ function createDeck(): Card[] {
     blueprint: CardBlueprint,
   ) => Array.from({ length: count }, () => ({ ...blueprint }));
   const blueprints: CardBlueprint[] = [
-    ...make(7, BASIC_CARD_POOL[0]),
-    ...make(8, BASIC_CARD_POOL[1]),
+    ...make(5, BASIC_CARD_POOL[0]),
+    ...make(5, BASIC_CARD_POOL[1]),
+    ...Array.from(
+      { length: 5 },
+      () => SPECIAL_CARD_POOL[Math.floor(Math.random() * SPECIAL_CARD_POOL.length)],
+    ),
   ];
   if (blueprints.length !== STARTING_DECK_SIZE) {
     throw new Error(`Starting deck must contain ${STARTING_DECK_SIZE} cards.`);
@@ -339,16 +364,37 @@ function createRandomDeck(depth: number, startId: number): DeckCase {
   };
 }
 
-function createBattleReward(depth: number, nextCardId: number) {
+function createConsumable(type: ConsumableType, id: string): Consumable {
+  return type === "extractTicket"
+    ? {
+        id,
+        type,
+        name: "추출 티켓",
+        description: "덱의 카드 1장을 추출하여 인벤토리로 되돌립니다.",
+      }
+    : {
+        id,
+        type,
+        name: "신속 티켓",
+        description: "에너지 1을 소모하여 카드 1장을 드로우합니다.",
+      };
+}
+
+function createBattleReward(
+  depth: number,
+  nextCardId: number,
+  dropType: RewardDropType,
+  consumableId: string,
+) {
   const gold = 1 + Math.floor(Math.random() * depth);
-  const extraRewardRoll = Math.random();
-  if (extraRewardRoll < 0.25) {
-    return { gold, card: null, deck: createRandomDeck(depth, nextCardId) };
+  if (dropType === "deck") {
+    return { gold, card: null, consumable: null, deck: createRandomDeck(depth, nextCardId) };
   }
-  if (extraRewardRoll < 0.5) {
-    return { gold, card: createBattleRewardCard(nextCardId), deck: null };
+  if (dropType === "card") {
+    return { gold, card: createBattleRewardCard(nextCardId), consumable: null, deck: null };
   }
-  return { gold, card: null, deck: null };
+  const type: ConsumableType = Math.random() < 0.5 ? "extractTicket" : "swiftTicket";
+  return { gold, card: null, consumable: createConsumable(type, consumableId), deck: null };
 }
 
 function shuffle<T>(items: T[]): T[] {
@@ -358,6 +404,30 @@ function shuffle<T>(items: T[]): T[] {
     [result[index], result[target]] = [result[target], result[index]];
   }
   return result;
+}
+
+function takeBalancedRewardDrop(debt: Record<RewardDropType, number>): RewardDropType {
+  const targetShare: Record<RewardDropType, number> = {
+    card: 1 / 2,
+    consumable: 1 / 3,
+    deck: 1 / 6,
+  };
+  const types: RewardDropType[] = ["card", "consumable", "deck"];
+  types.forEach((type) => {
+    debt[type] += targetShare[type];
+  });
+  const adjustedWeights = types.map((type) => ({
+    type,
+    weight: targetShare[type] * Math.exp(debt[type] * 0.12),
+  }));
+  const totalWeight = adjustedWeights.reduce((total, entry) => total + entry.weight, 0);
+  let roll = Math.random() * totalWeight;
+  const selected = adjustedWeights.find((entry) => {
+    roll -= entry.weight;
+    return roll <= 0;
+  })?.type ?? "card";
+  debt[selected] -= 1;
+  return selected;
 }
 
 function buildPiles(cards: Card[]): Card[][] {
@@ -479,10 +549,17 @@ export default function Home() {
   const [ownedDecks, setOwnedDecks] = useState<DeckCase[]>(() => [createStarterDeck()]);
   const [activeDeckId, setActiveDeckId] = useState("starter");
   const [inventoryCards, setInventoryCards] = useState<Card[]>([]);
+  const [inventoryConsumables, setInventoryConsumables] = useState<Consumable[]>([]);
   const [roomDrops, setRoomDrops] = useState<Record<string, Card[]>>({});
+  const [roomConsumableDrops, setRoomConsumableDrops] = useState<Record<string, Consumable[]>>({});
   const [roomDeckDrops, setRoomDeckDrops] = useState<Record<string, DeckCase[]>>({});
+  const [roomShops, setRoomShops] = useState<Record<string, ShopOffer[]>>({});
+  const [shopOpen, setShopOpen] = useState(false);
+  const [activeShopRoom, setActiveShopRoom] = useState<string | null>(null);
+  const [shopMessage, setShopMessage] = useState("필요한 물건을 골라보세요.");
   const [gold, setGold] = useState(0);
   const [battleRewards, setBattleRewards] = useState<Card[]>([]);
+  const [battleRewardConsumable, setBattleRewardConsumable] = useState<Consumable | null>(null);
   const [battleRewardDeck, setBattleRewardDeck] = useState<DeckCase | null>(null);
   const [battleRewardGold, setBattleRewardGold] = useState(0);
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
@@ -491,6 +568,9 @@ export default function Home() {
   const [deckEditorDrag, setDeckEditorDrag] = useState<{ cardId: number; source: DeckEditorArea } | null>(null);
   const deckEditorDragRef = useRef<{ cardId: number; source: DeckEditorArea } | null>(null);
   const [deckEditorDropTarget, setDeckEditorDropTarget] = useState<DeckEditorArea | null>(null);
+  const [consumableDrag, setConsumableDrag] = useState<{ id: string; source: ConsumableArea } | null>(null);
+  const consumableDragRef = useRef<{ id: string; source: ConsumableArea } | null>(null);
+  const [pendingExtractionTicketId, setPendingExtractionTicketId] = useState<string | null>(null);
   const [deckCaseDrag, setDeckCaseDrag] = useState<{ deckId: string; source: "floor" | "owned" } | null>(null);
   const deckCaseDragRef = useRef<{ deckId: string; source: "floor" | "owned" } | null>(null);
   const [deckCaseDropSlot, setDeckCaseDropSlot] = useState<number | null>(null);
@@ -505,6 +585,13 @@ export default function Home() {
   const [lockedEnemyId, setLockedEnemyId] = useState<string | null>(null);
   const [attackingEnemyId, setAttackingEnemyId] = useState<string | null>(null);
   const [damagePopup, setDamagePopup] = useState<DamagePopup | null>(null);
+  const rewardDropDebtRef = useRef<Record<RewardDropType, number>>({
+    card: 0,
+    consumable: 0,
+    deck: 0,
+  });
+  const nextCardIdRef = useRef(STARTING_DECK_SIZE);
+  const nextConsumableIdRef = useRef(1);
   const activeDeck = ownedDecks.find((deck) => deck.id === activeDeckId) ?? ownedDecks[0];
   const deckCards = activeDeck?.cards ?? [];
   const updateActiveDeckCards = (updater: Card[] | ((cards: Card[]) => Card[])) => {
@@ -513,6 +600,81 @@ export default function Home() {
       const cards = typeof updater === "function" ? updater(deck.cards) : updater;
       return { ...deck, cards };
     }));
+  };
+  const inventoryItemCount = inventoryCards.length + inventoryConsumables.length;
+
+  const nextConsumable = (type: ConsumableType) => {
+    const id = `consumable-${nextConsumableIdRef.current}`;
+    nextConsumableIdRef.current += 1;
+    return createConsumable(type, id);
+  };
+
+  const takeRewardDropType = () => {
+    return takeBalancedRewardDrop(rewardDropDebtRef.current);
+  };
+
+  const createShopStock = (depth: number): ShopOffer[] => {
+    const makeCardOffer = (rarity: "special" | "rare", slot: number): ShopOffer => {
+      const pool = rarity === "rare" ? RARE_CARD_POOL : SPECIAL_CARD_POOL;
+      const blueprint = pool[Math.floor(Math.random() * pool.length)];
+      const card = { ...blueprint, id: nextCardIdRef.current, revealed: false };
+      nextCardIdRef.current += 1;
+      return {
+        id: `shop-card-${depth}-${slot}-${card.id}`,
+        price: rarity === "rare" ? 9 + Math.floor(depth / 5) : 5 + Math.floor(depth / 8),
+        card,
+        sold: false,
+      };
+    };
+    const consumables = Array.from({ length: 2 }, (_, slot) => {
+      const type: ConsumableType = Math.random() < 0.5 ? "extractTicket" : "swiftTicket";
+      const consumable = nextConsumable(type);
+      return {
+        id: `shop-item-${depth}-${slot}-${consumable.id}`,
+        price: type === "extractTicket" ? 5 : 3,
+        consumable,
+        sold: false,
+      };
+    });
+    return [
+      ...consumables,
+      makeCardOffer("special", 2),
+      makeCardOffer("special", 3),
+      makeCardOffer("rare", 4),
+    ];
+  };
+
+  const openShop = (roomKey: string, depth: number) => {
+    if (!roomShops[roomKey]) {
+      const stock = createShopStock(depth);
+      setRoomShops((current) => ({ ...current, [roomKey]: stock }));
+    }
+    setActiveShopRoom(roomKey);
+    setShopMessage("필요한 물건을 골라보세요.");
+    setShopOpen(true);
+  };
+
+  const buyShopOffer = (offerId: string) => {
+    if (!activeShopRoom) return;
+    const offer = (roomShops[activeShopRoom] ?? []).find((item) => item.id === offerId);
+    if (!offer || offer.sold) return;
+    if (inventoryItemCount >= INVENTORY_CAPACITY) {
+      setShopMessage(`인벤토리가 가득 찼습니다. 카드와 소모품을 합쳐 ${INVENTORY_CAPACITY}개까지 보관할 수 있습니다.`);
+      return;
+    }
+    if (gold < offer.price) {
+      setShopMessage(`${offer.price - gold}G가 부족합니다.`);
+      return;
+    }
+    setGold((current) => current - offer.price);
+    if (offer.card) setInventoryCards((current) => [...current, offer.card!]);
+    if (offer.consumable) setInventoryConsumables((current) => [...current, offer.consumable!]);
+    setRoomShops((current) => ({
+      ...current,
+      [activeShopRoom]: (current[activeShopRoom] ?? []).map((item) =>
+        item.id === offerId ? { ...item, sold: true } : item),
+    }));
+    setShopMessage(`${offer.card?.name ?? offer.consumable?.name}을(를) 구매했습니다.`);
   };
   const pendingOriginsRef = useRef(new Map<number, DOMRect>());
   const handCardRefs = useRef(new Map<number, HTMLButtonElement>());
@@ -587,6 +749,7 @@ export default function Home() {
     setAttackingEnemyId(null);
     setDamagePopup(null);
     setBattleRewards([]);
+    setBattleRewardConsumable(null);
     setBattleRewardDeck(null);
     setBattleRewardGold(0);
     setPhase("drawing");
@@ -630,9 +793,12 @@ export default function Home() {
     setMapPosition(nextPosition);
     setVisitedRooms((current) => new Set(current).add(roomKey));
 
-    if (getRoomType(nextPosition, mapSeed) === "combat" && !clearedCombats.has(roomKey)) {
+    const roomType = getRoomType(nextPosition, mapSeed);
+    if (roomType === "combat" && !clearedCombats.has(roomKey)) {
       setActiveBattleRoom(roomKey);
       startBattle(runPlayerHp);
+    } else if (roomType === "shop") {
+      openShop(roomKey, nextPosition.y + 1);
     }
   };
 
@@ -650,6 +816,10 @@ export default function Home() {
         mapTravelTimerRef.current = window.setTimeout(() => {
           mapTravelTimerRef.current = null;
           setMapTraveling(false);
+          const destination = path.at(-1)!;
+          if (getRoomType(destination, mapSeed) === "shop") {
+            openShop(mapRoomKey(destination), destination.y + 1);
+          }
         }, 300);
       }
     };
@@ -664,6 +834,12 @@ export default function Home() {
         ...current,
         [activeBattleRoom]: landingDrops,
       }));
+      if (battleRewardConsumable) {
+        setRoomConsumableDrops((current) => ({
+          ...current,
+          [activeBattleRoom]: [...(current[activeBattleRoom] ?? []), battleRewardConsumable],
+        }));
+      }
       if (battleRewardDeck) {
         setRoomDeckDrops((current) => ({
           ...current,
@@ -674,6 +850,7 @@ export default function Home() {
     }
     setRunPlayerHp(game.playerHp);
     setBattleRewards([]);
+    setBattleRewardConsumable(null);
     setBattleRewardDeck(null);
     setBattleRewardGold(0);
     setActiveBattleRoom(null);
@@ -694,10 +871,16 @@ export default function Home() {
     setOwnedDecks([starterDeck]);
     setActiveDeckId(starterDeck.id);
     setInventoryCards([]);
+    setInventoryConsumables([]);
     setRoomDrops({});
+    setRoomConsumableDrops({});
     setRoomDeckDrops({});
+    setRoomShops({});
+    setShopOpen(false);
+    setActiveShopRoom(null);
     setGold(0);
     setBattleRewards([]);
+    setBattleRewardConsumable(null);
     setBattleRewardDeck(null);
     setBattleRewardGold(0);
     setDeckEditorOpen(false);
@@ -705,6 +888,10 @@ export default function Home() {
     setDeckEditorSnapshot(null);
     setPendingRemovedCards([]);
     setHoveredDeckCard(null);
+    setPendingExtractionTicketId(null);
+    rewardDropDebtRef.current = { card: 0, consumable: 0, deck: 0 };
+    nextCardIdRef.current = STARTING_DECK_SIZE;
+    nextConsumableIdRef.current = 1;
     setGame(waitingState());
     setPhase("drawing");
     setScreen("map");
@@ -834,6 +1021,109 @@ export default function Home() {
     setDeckEditorMessage(`${card.name}을(를) 바닥에서 덱에 넣었습니다.`);
   };
 
+  const moveFloorConsumableToInventory = (consumableId: string) => {
+    const roomKey = mapRoomKey(mapPosition);
+    const consumable = (roomConsumableDrops[roomKey] ?? []).find((item) => item.id === consumableId);
+    if (!consumable) return;
+    setRoomConsumableDrops((current) => ({
+      ...current,
+      [roomKey]: (current[roomKey] ?? []).filter((item) => item.id !== consumableId),
+    }));
+    setInventoryConsumables((current) => [...current, consumable]);
+    setDeckEditorMessage(`${consumable.name}을(를) 인벤토리에 주웠습니다.`);
+  };
+
+  const moveInventoryConsumableToFloor = (consumableId: string) => {
+    const consumable = inventoryConsumables.find((item) => item.id === consumableId);
+    if (!consumable) return;
+    const roomKey = mapRoomKey(mapPosition);
+    setInventoryConsumables((current) => current.filter((item) => item.id !== consumableId));
+    setRoomConsumableDrops((current) => ({
+      ...current,
+      [roomKey]: [...(current[roomKey] ?? []), consumable],
+    }));
+    if (pendingExtractionTicketId === consumableId) setPendingExtractionTicketId(null);
+    setDeckEditorMessage(`${consumable.name}을(를) 바닥에 놓았습니다.`);
+  };
+
+  const beginConsumableDrag = (
+    event: ReactDragEvent<HTMLElement>,
+    id: string,
+    source: ConsumableArea,
+  ) => {
+    const drag = { id, source };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `consumable:${source}:${id}`);
+    consumableDragRef.current = drag;
+    setConsumableDrag(drag);
+  };
+
+  const finishConsumableDrag = () => {
+    consumableDragRef.current = null;
+    setConsumableDrag(null);
+  };
+
+  const dropConsumable = (event: ReactDragEvent<HTMLElement>, target: ConsumableArea) => {
+    const drag = consumableDragRef.current ?? consumableDrag;
+    if (!drag || drag.source === target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (drag.source === "floor" && target === "inventory") moveFloorConsumableToInventory(drag.id);
+    if (drag.source === "inventory" && target === "floor") moveInventoryConsumableToFloor(drag.id);
+    finishConsumableDrag();
+  };
+
+  const selectExtractionTicket = (consumable: Consumable) => {
+    if (consumable.type !== "extractTicket") {
+      setDeckEditorMessage("신속 티켓은 전투 중에 사용할 수 있습니다.");
+      return;
+    }
+    setPendingExtractionTicketId((current) => current === consumable.id ? null : consumable.id);
+    setDeckEditorMessage(
+      pendingExtractionTicketId === consumable.id
+        ? "추출을 취소했습니다."
+        : "추출할 덱 카드 1장을 클릭하세요.",
+    );
+  };
+
+  const extractDeckCard = (cardId: number) => {
+    if (!pendingExtractionTicketId) return;
+    if (deckCards.length <= 1) {
+      setDeckEditorMessage("덱에는 반드시 카드가 1장 이상 있어야 합니다.");
+      return;
+    }
+    const card = deckCards.find((item) => item.id === cardId);
+    if (!card) return;
+    setInventoryConsumables((current) =>
+      current.filter((item) => item.id !== pendingExtractionTicketId));
+    updateActiveDeckCards((current) => current.filter((item) => item.id !== cardId));
+    setInventoryCards((current) => [...current, card]);
+    setPendingExtractionTicketId(null);
+    setDeckEditorMessage(`${card.name}을(를) 추출하여 인벤토리로 되돌렸습니다.`);
+  };
+
+  const consumeSwiftTicket = (consumableId: string) => {
+    const ticket = inventoryConsumables.find((item) =>
+      item.id === consumableId && item.type === "swiftTicket");
+    if (!ticket || phase !== "playing" || game.status !== "playing") return;
+    if (game.energy < 1) {
+      setGame((current) => ({ ...current, message: "신속 티켓을 사용하려면 에너지 1이 필요합니다." }));
+      return;
+    }
+    if (game.piles.every((pile) => pile.length === 0)) {
+      setGame((current) => ({ ...current, message: "드로우할 파일 카드가 없습니다." }));
+      return;
+    }
+    setInventoryConsumables((current) => current.filter((item) => item.id !== consumableId));
+    setGame((current) => ({
+      ...current,
+      energy: current.energy - 1,
+      pendingDraws: current.pendingDraws + 1,
+      message: "신속 티켓 사용: 드로우할 파일을 선택하세요.",
+      history: ["신속 티켓 사용", ...current.history].slice(0, 5),
+    }));
+  };
+
   const pickUpFloorDeck = (deckId: string) => {
     if (ownedDecks.length >= MAX_OWNED_DECKS) {
       setDeckEditorMessage(`덱은 최대 ${MAX_OWNED_DECKS}개까지 보유할 수 있습니다.`);
@@ -933,6 +1223,8 @@ export default function Home() {
   const openDeckEditor = (message: string) => {
     const roomKey = mapRoomKey(mapPosition);
     finishDeckEditorDrag();
+    finishConsumableDrag();
+    setPendingExtractionTicketId(null);
     setPendingRemovedCards([]);
     setHoveredDeckCard(null);
     setDeckEditorSnapshot({
@@ -940,7 +1232,9 @@ export default function Home() {
       decks: ownedDecks.map((deck) => ({ ...deck, cards: [...deck.cards] })),
       activeDeckId,
       inventory: [...inventoryCards],
+      consumables: [...inventoryConsumables],
       floorCards: [...(roomDrops[roomKey] ?? [])],
+      floorConsumables: [...(roomConsumableDrops[roomKey] ?? [])],
       floorDecks: [...(roomDeckDrops[roomKey] ?? [])],
     });
     setDeckEditorMessage(message);
@@ -948,13 +1242,15 @@ export default function Home() {
   };
 
   const confirmDeckEditor = () => {
-    if (inventoryCards.length > INVENTORY_CAPACITY) {
-      setDeckEditorMessage(`인벤토리를 ${INVENTORY_CAPACITY}장 이하로 줄여야 편집을 확인할 수 있습니다.`);
+    if (inventoryItemCount > INVENTORY_CAPACITY) {
+      setDeckEditorMessage(`카드와 소모품을 합쳐 ${INVENTORY_CAPACITY}개 이하로 줄여야 편집을 확인할 수 있습니다.`);
       return;
     }
     setDeckEditorSnapshot(null);
     setPendingRemovedCards([]);
     setHoveredDeckCard(null);
+    setPendingExtractionTicketId(null);
+    finishConsumableDrag();
     finishDeckEditorDrag();
     setDeckEditorOpen(false);
   };
@@ -964,9 +1260,14 @@ export default function Home() {
       setOwnedDecks(deckEditorSnapshot.decks);
       setActiveDeckId(deckEditorSnapshot.activeDeckId);
       setInventoryCards(deckEditorSnapshot.inventory);
+      setInventoryConsumables(deckEditorSnapshot.consumables);
       setRoomDrops((current) => ({
         ...current,
         [deckEditorSnapshot.roomKey]: deckEditorSnapshot.floorCards,
+      }));
+      setRoomConsumableDrops((current) => ({
+        ...current,
+        [deckEditorSnapshot.roomKey]: deckEditorSnapshot.floorConsumables,
       }));
       setRoomDeckDrops((current) => ({
         ...current,
@@ -976,6 +1277,8 @@ export default function Home() {
     setDeckEditorSnapshot(null);
     setPendingRemovedCards([]);
     setHoveredDeckCard(null);
+    setPendingExtractionTicketId(null);
+    finishConsumableDrag();
     finishDeckEditorDrag();
     setDeckEditorOpen(false);
   };
@@ -1110,17 +1413,21 @@ export default function Home() {
         ? { ...enemy, hp: Math.max(0, enemy.hp - damage) }
         : enemy);
       if (enemiesAfterAttack.every((enemy) => enemy.hp === 0)) {
-        const allCards = [
-          ...ownedDecks.flatMap((deck) => deck.cards),
-          ...inventoryCards,
-          ...Object.values(roomDrops).flat(),
-          ...Object.values(roomDeckDrops).flatMap((decks) => decks.flatMap((deck) => deck.cards)),
-        ];
-        const nextId = allCards.reduce((highest, ownedCard) => Math.max(highest, ownedCard.id), -1) + 1;
         const depth = mapPosition.y + 1;
-        const reward = createBattleReward(depth, nextId);
+        const dropType = takeRewardDropType();
+        const consumableId = `consumable-${nextConsumableIdRef.current}`;
+        nextConsumableIdRef.current += 1;
+        const reward = createBattleReward(depth, nextCardIdRef.current, dropType, consumableId);
+        if (reward.card) nextCardIdRef.current += 1;
+        if (reward.deck?.cards.length) {
+          nextCardIdRef.current = Math.max(
+            nextCardIdRef.current,
+            ...reward.deck.cards.map((ownedCard) => ownedCard.id + 1),
+          );
+        }
         setBattleRewardGold(reward.gold);
         setBattleRewardDeck(reward.deck);
+        setBattleRewardConsumable(reward.consumable);
         setBattleRewards(reward.card ? [reward.card] : []);
       }
     }
@@ -1619,7 +1926,7 @@ export default function Home() {
 
   if (screen === "map") {
     const currentRoomKey = mapRoomKey(mapPosition);
-    const canEditDeck = getRoomType(mapPosition, mapSeed) === "empty" || clearedCombats.has(currentRoomKey);
+    const canEditDeck = getRoomType(mapPosition, mapSeed) !== "combat" || clearedCombats.has(currentRoomKey);
     const viewedDeck = ownedDecks.find((deck) => deck.id === deckViewerDeckId) ?? activeDeck;
     const rarityOrder: Record<CardRarity, number> = { rare: 0, special: 1, basic: 2 };
     const deckGroups = Array.from(deckCards.reduce((groups, card) => {
@@ -1645,7 +1952,9 @@ export default function Home() {
     }, new Map<string, { card: Card; cardIds: number[] }>()).values()).sort((left, right) =>
       left.card.cost - right.card.cost || left.card.name.localeCompare(right.card.name, "ko"));
     const currentFloorCards = roomDrops[currentRoomKey] ?? [];
+    const currentFloorConsumables = roomConsumableDrops[currentRoomKey] ?? [];
     const currentFloorDecks = roomDeckDrops[currentRoomKey] ?? [];
+    const activeShopOffers = activeShopRoom ? roomShops[activeShopRoom] ?? [] : [];
     const pendingRemovedGroups = Array.from(pendingRemovedCards.reduce((groups, { card }) => {
       const groupKey = `${card.effect}:${card.damageType}:${card.name}`;
       const current = groups.get(groupKey);
@@ -1693,6 +2002,16 @@ export default function Home() {
               <span className="deck-stack-icon" aria-hidden="true" />
               <span>덱 보기</span>
             </button>
+            {getRoomType(mapPosition, mapSeed) === "shop" && (
+              <button
+                type="button"
+                className="shop-trigger"
+                onClick={() => openShop(currentRoomKey, mapPosition.y + 1)}
+              >
+                <span aria-hidden="true">G</span>
+                <strong>상점 열기</strong>
+              </button>
+            )}
             {canEditDeck && (
               <button
                 type="button"
@@ -1713,6 +2032,7 @@ export default function Home() {
               <span><i className="legend-current" />현재 위치</span>
               <span><i className="legend-empty" />방</span>
               <span><i className="legend-combat" />전투</span>
+              <span><i className="legend-shop" />상점</span>
               <span><i className="legend-unknown" />미방문</span>
             </div>
             <div className="map-toolbar-actions">
@@ -1760,11 +2080,14 @@ export default function Home() {
                 const adjacent = distance === 1;
                 const reachable = !current && safeRoomRoutes.has(roomKey);
                 const hasItems = (roomDrops[roomKey]?.length ?? 0) > 0
+                  || (roomConsumableDrops[roomKey]?.length ?? 0) > 0
                   || (roomDeckDrops[roomKey]?.length ?? 0) > 0;
                 const roomState = !visited
                   ? "unknown"
                   : roomType === "combat" && !cleared
                     ? "combat"
+                    : roomType === "shop"
+                      ? "shop"
                     : "empty";
                 const roomLabel = current
                   ? "현재 위치"
@@ -1772,6 +2095,8 @@ export default function Home() {
                     ? "미지의 방"
                     : roomType === "combat" && !cleared
                         ? "전투 방"
+                        : roomType === "shop"
+                          ? "상점"
                         : "방";
                 return (
                   <button
@@ -1797,6 +2122,8 @@ export default function Home() {
                   >
                     {!current && visited && roomType === "combat" && !cleared
                         ? <span>전투</span>
+                        : visited && roomType === "shop"
+                          ? <span>상점</span>
                         : null}
                     {hasItems && <span className="room-item-indicator" aria-label="아이템 있음" />}
                   </button>
@@ -1813,18 +2140,64 @@ export default function Home() {
             </div>
             <div className="map-depth-fade" aria-hidden="true" />
           </div>
-          {(currentFloorCards.length > 0 || currentFloorDecks.length > 0) && canEditDeck && (
+          {(currentFloorCards.length > 0 || currentFloorConsumables.length > 0 || currentFloorDecks.length > 0) && canEditDeck && (
             <button
               type="button"
               className="room-floor-notice"
               onClick={() => openDeckEditor("방 바닥에 떨어진 카드와 덱을 확인할 수 있습니다.")}
             >
               <span>방 바닥</span>
-              <strong>카드 {currentFloorCards.length}장 · 덱 {currentFloorDecks.length}개</strong>
+              <strong>카드 {currentFloorCards.length}장 · 소모품 {currentFloorConsumables.length}개 · 덱 {currentFloorDecks.length}개</strong>
               <small>눌러서 확인</small>
             </button>
           )}
         </section>
+
+        {shopOpen && (
+          <div className="shop-overlay" role="dialog" aria-modal="true" aria-labelledby="shop-title">
+            <section className="shop-panel">
+              <header>
+                <div>
+                  <p>TRAVELING MERCHANT</p>
+                  <h2 id="shop-title">여행 상점</h2>
+                  <span>카드와 소모품은 같은 인벤토리 공간을 사용합니다.</span>
+                </div>
+                <div className="shop-header-status">
+                  <strong>{gold}G</strong>
+                  <span className={inventoryItemCount >= INVENTORY_CAPACITY ? "is-full" : ""}>
+                    인벤토리 {inventoryItemCount} / {INVENTORY_CAPACITY}
+                  </span>
+                  <button type="button" onClick={() => setShopOpen(false)}>나가기</button>
+                </div>
+              </header>
+              <div className="shop-stock">
+                {activeShopOffers.map((offer) => (
+                  <button
+                    type="button"
+                    className={`shop-offer ${offer.sold ? "is-sold" : ""}`}
+                    key={offer.id}
+                    onClick={() => buyShopOffer(offer.id)}
+                    disabled={offer.sold}
+                  >
+                    {offer.card ? (
+                      <div className={`shop-card card-face ${offer.card.kind} ${offer.card.damageType}`}>
+                        <CardFace card={offer.card} />
+                      </div>
+                    ) : offer.consumable ? (
+                      <div className={`consumable-ticket ${offer.consumable.type}`}>
+                        <span className="ticket-mark" aria-hidden="true">T</span>
+                        <strong>{offer.consumable.name}</strong>
+                        <small>{offer.consumable.description}</small>
+                      </div>
+                    ) : null}
+                    <span className="shop-price">{offer.sold ? "판매 완료" : `${offer.price}G`}</span>
+                  </button>
+                ))}
+              </div>
+              <footer>{shopMessage}</footer>
+            </section>
+          </div>
+        )}
 
         {deckEditorOpen && (
           <div className="deck-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="deck-editor-title">
@@ -1842,7 +2215,7 @@ export default function Home() {
                     type="button"
                     className="confirm"
                     onClick={confirmDeckEditor}
-                    disabled={inventoryCards.length > INVENTORY_CAPACITY}
+                    disabled={inventoryItemCount > INVENTORY_CAPACITY}
                   >편집 확인</button>
                 </div>
               </header>
@@ -1851,6 +2224,12 @@ export default function Home() {
                 <section
                   className={`deck-editor-column inventory-column ${deckEditorDropTarget === "inventory" ? "is-drop-target" : ""}`}
                   onDragOver={(event) => {
+                    const itemDrag = consumableDragRef.current ?? consumableDrag;
+                    if (itemDrag?.source === "floor") {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      return;
+                    }
                     const drag = deckEditorDragRef.current ?? deckEditorDrag;
                     const source = drag?.source;
                     const temporaryDeckCard = source === "deck"
@@ -1861,15 +2240,40 @@ export default function Home() {
                     event.dataTransfer.dropEffect = "move";
                     setDeckEditorDropTarget("inventory");
                   }}
-                  onDrop={(event) => dropDeckEditorCard(event, "inventory")}
+                  onDrop={(event) => {
+                    if ((consumableDragRef.current ?? consumableDrag)?.source === "floor") {
+                      dropConsumable(event, "inventory");
+                      return;
+                    }
+                    dropDeckEditorCard(event, "inventory");
+                  }}
                 >
                   <div className="deck-editor-column-title">
                     <h3>인벤토리</h3>
-                    <strong className={inventoryCards.length > INVENTORY_CAPACITY ? "is-full" : ""}>
-                      {inventoryCards.length} / {INVENTORY_CAPACITY}
+                    <strong className={inventoryItemCount > INVENTORY_CAPACITY ? "is-full" : ""}>
+                      {inventoryItemCount} / {INVENTORY_CAPACITY}
                     </strong>
                   </div>
                   <div className="deck-editor-card-list">
+                    {inventoryConsumables.map((consumable) => (
+                      <button
+                        type="button"
+                        className={`consumable-ticket inventory-ticket ${consumable.type} ${pendingExtractionTicketId === consumable.id ? "is-selected" : ""}`}
+                        key={consumable.id}
+                        draggable
+                        onDragStart={(event) => beginConsumableDrag(event, consumable.id, "inventory")}
+                        onDragEnd={finishConsumableDrag}
+                        onClick={() => selectExtractionTicket(consumable)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          moveInventoryConsumableToFloor(consumable.id);
+                        }}
+                      >
+                        <span className="ticket-mark" aria-hidden="true">T</span>
+                        <strong>{consumable.name}</strong>
+                        <small>{consumable.description}</small>
+                      </button>
+                    ))}
                     {inventoryGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
@@ -1889,8 +2293,8 @@ export default function Home() {
                         {cardIds.length > 1 && <span className="inventory-card-count">x{cardIds.length}</span>}
                       </button>
                     ))}
-                    {inventoryCards.length === 0 && (
-                      <div className="deck-editor-empty">바닥의 카드를 줍거나 보상 카드를 획득하면 이곳에 보관됩니다.</div>
+                    {inventoryItemCount === 0 && (
+                      <div className="deck-editor-empty">바닥의 카드·소모품을 줍거나 보상을 획득하면 이곳에 보관됩니다.</div>
                     )}
                   </div>
                 </section>
@@ -1984,12 +2388,17 @@ export default function Home() {
                             onMouseLeave={() => setHoveredDeckCard(null)}
                             onFocus={() => setHoveredDeckCard(card)}
                             onBlur={() => setHoveredDeckCard(null)}
+                            onClick={() => {
+                              if (pendingExtractionTicketId) extractDeckCard(cardId);
+                            }}
                             onContextMenu={(event) => {
                               event.preventDefault();
                               if (isTemporary) moveDeckCardToInventory(cardId);
                               else moveDeckCardToTrash(cardId);
                             }}
-                            aria-label={isTemporary
+                            aria-label={pendingExtractionTicketId
+                              ? `${card.name} ${cardIds.length}장, 클릭하면 한 장 추출`
+                              : isTemporary
                               ? `${card.name} ${cardIds.length}장, 편집 중 추가됨. 우클릭하면 한 장을 인벤토리로 이동`
                               : `${card.name} ${cardIds.length}장, 우클릭하면 한 장을 휴지통으로 이동`}
                           >
@@ -2084,8 +2493,8 @@ export default function Home() {
                   <span />
                 </div>
                 <div className="deck-editor-floor-heading">
-                  <div><strong>방 바닥</strong><span>카드 {currentFloorCards.length}장 · 덱 {currentFloorDecks.length}개</span></div>
-                  <small>카드를 좌클릭하면 인벤토리로, 인벤토리 카드를 우클릭하면 바닥으로 이동합니다.</small>
+                  <div><strong>방 바닥</strong><span>카드 {currentFloorCards.length}장 · 소모품 {currentFloorConsumables.length}개 · 덱 {currentFloorDecks.length}개</span></div>
+                  <small>카드와 소모품을 좌클릭하면 인벤토리로, 인벤토리 물품을 우클릭하면 바닥으로 이동합니다.</small>
                 </div>
                 <div className="deck-editor-floor-layout">
                   <div
@@ -2093,6 +2502,13 @@ export default function Home() {
                     onDragOver={(event) => {
                       const deckDrag = deckCaseDragRef.current ?? deckCaseDrag;
                       if (deckDrag?.source === "owned") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.dataTransfer.dropEffect = "move";
+                        return;
+                      }
+                      const itemDrag = consumableDragRef.current ?? consumableDrag;
+                      if (itemDrag?.source === "inventory") {
                         event.preventDefault();
                         event.stopPropagation();
                         event.dataTransfer.dropEffect = "move";
@@ -2117,6 +2533,10 @@ export default function Home() {
                         finishDeckCaseDrag();
                         return;
                       }
+                      if ((consumableDragRef.current ?? consumableDrag)?.source === "inventory") {
+                        dropConsumable(event, "floor");
+                        return;
+                      }
                       dropDeckEditorCard(event, "floor");
                     }}
                   >
@@ -2137,6 +2557,21 @@ export default function Home() {
                         <small>눌러서 줍기</small>
                       </button>
                     ))}
+                    {currentFloorConsumables.map((consumable) => (
+                      <button
+                        type="button"
+                        className={`consumable-ticket floor-ticket ${consumable.type}`}
+                        key={consumable.id}
+                        draggable
+                        onDragStart={(event) => beginConsumableDrag(event, consumable.id, "floor")}
+                        onDragEnd={finishConsumableDrag}
+                        onClick={() => moveFloorConsumableToInventory(consumable.id)}
+                      >
+                        <span className="ticket-mark" aria-hidden="true">T</span>
+                        <strong>{consumable.name}</strong>
+                        <small>{consumable.description}</small>
+                      </button>
+                    ))}
                     {floorGroups.map(({ card, cardIds }) => (
                       <button
                         type="button"
@@ -2152,8 +2587,8 @@ export default function Home() {
                         {cardIds.length > 1 && <span className="inventory-card-count">x{cardIds.length}</span>}
                       </button>
                     ))}
-                    {currentFloorCards.length === 0 && currentFloorDecks.length === 0 && (
-                      <span className="floor-empty-copy">바닥에 카드가 없습니다</span>
+                    {currentFloorCards.length === 0 && currentFloorConsumables.length === 0 && currentFloorDecks.length === 0 && (
+                      <span className="floor-empty-copy">바닥에 물품이 없습니다</span>
                     )}
                   </div>
                 </div>
@@ -2398,6 +2833,23 @@ export default function Home() {
                 <i style={{ width: `${(game.playerHp / MAX_PLAYER_HP) * 100}%` }} />
                 <span>{game.playerHp} / {MAX_PLAYER_HP}</span>
               </div>
+              {inventoryConsumables.length > 0 && (
+                <div className="battle-consumables" aria-label="보유 소모품">
+                  {inventoryConsumables.map((consumable) => (
+                    <button
+                      type="button"
+                      className={consumable.type}
+                      key={consumable.id}
+                      onClick={() => consumable.type === "swiftTicket" && consumeSwiftTicket(consumable.id)}
+                      disabled={consumable.type !== "swiftTicket" || controlsLocked || game.energy < 1}
+                      title={consumable.description}
+                    >
+                      <span>T</span>
+                      <strong>{consumable.name}</strong>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -2472,6 +2924,13 @@ export default function Home() {
                         <CardFace card={card} />
                       </div>
                     ))}
+                    {battleRewardConsumable && (
+                      <div className={`consumable-ticket battle-reward-consumable ${battleRewardConsumable.type}`}>
+                        <span className="ticket-mark" aria-hidden="true">T</span>
+                        <strong>{battleRewardConsumable.name}</strong>
+                        <small>{battleRewardConsumable.description}</small>
+                      </div>
+                    )}
                     {battleRewardDeck && (
                       <div className="battle-reward-deck">
                         <span className="floor-deck-icon" aria-hidden="true" />
@@ -2479,9 +2938,6 @@ export default function Home() {
                         <span>카드 {battleRewardDeck.cards.length}장</span>
                         <span>용량 {battleRewardDeck.capacity}칸</span>
                       </div>
-                    )}
-                    {battleRewards.length === 0 && !battleRewardDeck && (
-                      <div className="battle-no-extra-reward">추가 드랍 없음</div>
                     )}
                   </div>
                 </div>
